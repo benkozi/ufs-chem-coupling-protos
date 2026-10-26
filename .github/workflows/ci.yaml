@@ -1,0 +1,223 @@
+# Everything runs inside the image built from ./Dockerfile. Jobs are fresh VMs, so the image is shared
+# through BuildKit's registry cache in GHCR (the two spack-based model builds exceed the 10 GB
+# `type=gha` limit; `type=gha` stays as a secondary cache-from): `build` warms it with the workflow's
+# own GITHUB_TOKEN, the later jobs rebuild as a pure cache hit and push to a job-local registry:2
+# service (the docker-container buildx driver holds results inside BuildKit, so a localhost push is how
+# the job's docker daemon gets the image). The image itself is never pushed off-runner, only cache layers.
+# Every job checks out the submodules: the cece/catchem stages are keyed on COPY extern/..., which only
+# hashes identically with the submodules present.
+name: ci
+on:
+  pull_request:
+  push:
+    branches:
+      - develop
+      - main
+  workflow_dispatch:
+permissions:
+  contents: read
+# Only PR runs cancel each other.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+env:
+  CACHE_REF: ghcr.io/benkozi/ufs-chem-coupling-protos/buildcache
+  CI_IMAGE: localhost:5000/ufs-chem-coupling-protos:ci
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
+      # Pull requests from forks run with a read-only GITHUB_TOKEN: they read the cache but cannot
+      # write it, so cache-to is set only when the token can push.
+      - name: Decide whether this run may write the registry cache
+        id: cache
+        env:
+          CAN_PUSH: >-
+            ${{ github.event_name != 'pull_request'
+                || github.event.pull_request.head.repo.full_name == github.repository }}
+        run: |
+          if [ "$CAN_PUSH" = "true" ]; then
+            echo "to=type=registry,ref=${CACHE_REF},mode=max" >> "$GITHUB_OUTPUT"
+          else
+            echo "to=" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Build image (warm the registry cache)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
+        with:
+          context: .
+          push: false
+          cache-from: |
+            type=registry,ref=${{ env.CACHE_REF }}
+            type=gha
+          cache-to: ${{ steps.cache.outputs.to }}
+  pre-commit:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: read
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5000:5000
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
+        with:
+          driver-opts: network=host
+      - name: Build image (cache hit) and push to job-local registry
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
+        with:
+          context: .
+          push: true
+          tags: ${{ env.CI_IMAGE }}
+          cache-from: |
+            type=registry,ref=${{ env.CACHE_REF }}
+            type=gha
+      - name: pre-commit (all files)
+        run: |
+          docker run --rm -v "$GITHUB_WORKSPACE":/repo -w /repo "$CI_IMAGE" \
+            sh -c 'git config --global --add safe.directory /repo \
+                   && uv sync --frozen \
+                   && uv run pre-commit run --all-files'
+      # The PR title becomes the squash-merge subject, so it must satisfy the commit-message grammar.
+      # The title is attacker-controlled: it reaches the shell only through the environment, never
+      # interpolated into script text.
+      - name: PR title follows conventional commits
+        if: github.event_name == 'pull_request'
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          docker run --rm -e PR_TITLE -v "$GITHUB_WORKSPACE":/repo -w /repo "$CI_IMAGE" \
+            sh -c 'git config --global --add safe.directory /repo \
+                   && uv sync --frozen \
+                   && printf "%s\n" "$PR_TITLE" > /tmp/pr-title.txt \
+                   && uv run pre-commit run conventional-pre-commit \
+                        --hook-stage commit-msg \
+                        --commit-msg-filename /tmp/pr-title.txt'
+      - name: Pushed commit follows conventional commits
+        if: github.event_name == 'push'
+        run: |
+          git log -1 --pretty=%B > /tmp/commit-msg.txt
+          docker run --rm -v "$GITHUB_WORKSPACE":/repo -v /tmp/commit-msg.txt:/tmp/commit-msg.txt \
+            -w /repo "$CI_IMAGE" \
+            sh -c 'git config --global --add safe.directory /repo \
+                   && uv sync --frozen \
+                   && uv run pre-commit run conventional-pre-commit \
+                        --hook-stage commit-msg \
+                        --commit-msg-filename /tmp/commit-msg.txt'
+  pytest:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: read
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5000:5000
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
+        with:
+          driver-opts: network=host
+      - name: Build image (cache hit) and push to job-local registry
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
+        with:
+          context: .
+          push: true
+          tags: ${{ env.CI_IMAGE }}
+          cache-from: |
+            type=registry,ref=${{ env.CACHE_REF }}
+            type=gha
+      # Coverage: production code only ([tool.coverage], fail_under); the table in the job summary,
+      # the HTML report as an artifact.
+      - name: pytest (tools/tests)
+        run: |
+          docker run --rm -v "$GITHUB_WORKSPACE":/repo -w /repo "$CI_IMAGE" \
+            sh -c 'git config --global --add safe.directory /repo \
+                   && uv sync --frozen \
+                   && uv run pytest tools/tests \
+                        --cov --cov-report=term --cov-report=html:coverage-html' \
+            | tee pytest-output.txt
+      - name: Coverage in the job summary
+        if: always()
+        run: |-
+          { echo '## Coverage (tools/tests)'; echo '```'; \
+            sed -n '/coverage:/,/^TOTAL/p' pytest-output.txt; echo '```'; } \
+            >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload the coverage report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-html-${{ github.run_id }}-${{ github.run_attempt }}
+          path: coverage-html
+  ctest:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: read
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5000:5000
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
+        with:
+          driver-opts: network=host
+      - name: Build image (cache hit) and push to job-local registry
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
+        with:
+          context: .
+          push: true
+          tags: ${{ env.CI_IMAGE }}
+          cache-from: |
+            type=registry,ref=${{ env.CACHE_REF }}
+            type=gha
+      # MPIEXEC_PREFLAGS for the container come from the image's PROTOS_MPIEXEC_PREFLAGS.
+      - name: ctest (label ci)
+        run: |-
+          docker run --rm -v "$GITHUB_WORKSPACE":/repo -w /repo "$CI_IMAGE" \
+            sh -c 'cmake -S . -B build && cmake --build build && ctest --test-dir build --output-on-failure -L ci'

@@ -1,0 +1,14 @@
+# Local parity with CI: the same image, the checkout bind-mounted at /repo. Build with the cloud builder
+# (tools/ci.sh build, or BUILDX_BUILDER=cloud-bkrlps-cece-builder docker compose build); the base image
+# is amd64 only, so on Apple Silicon the container runs under emulation.
+services:
+  ci:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ufs-chem-coupling-protos:dev
+    platform: linux/amd64
+    volumes:
+      - .:/repo
+    working_dir: /repo
+    command: bash

@@ -1,0 +1,15 @@
+# The build context carries the prototype sources and the two submodule trees (~70 MB);
+# never the git metadata, build trees, virtualenvs, data caches or design records.
+.git
+**/.git
+**/build
+**/cmake-build-*
+.venv
+**/.venv
+.mypy_cache
+.ruff_cache
+.pytest_cache
+coverage-html
+.coverage
+design
+data
