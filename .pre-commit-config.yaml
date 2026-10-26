@@ -1,0 +1,98 @@
+# Local hooks through uv so the project venv is the single source of tool
+# versions — a mirrors-mypy isolated environment would miss the pydantic
+# plugin and every dependency, checking against a wrong model of the code.
+# Isolated-repo hooks are the exception for tools with no
+# project-dependency coupling: pre-commit-hooks (whitespace trimming) and
+# conventional-pre-commit (commit-message grammar).
+#
+# design/ is excluded from yaml/whitespace hooks throughout: spike artifacts
+# and design records are records, not maintained code.
+#
+# commit-msg in the default hook types: `pre-commit install` then also
+# installs the conventional-commit gate, which checks the message of the
+# commit being created and aborts it on violation. CI reuses the same hook
+# against PR titles (see .github/workflows/ci.yaml).
+default_install_hook_types:
+  - pre-commit
+  - commit-msg
+repos:
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v4.4.0
+    hooks:
+      - id: conventional-pre-commit
+        stages:
+          - commit-msg
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        # Preserve Markdown hard line breaks (trailing double-space).
+        args:
+          - --markdown-linebreak-ext=md
+        exclude: ^(design/|uv\.lock$)
+      - id: end-of-file-fixer
+        exclude: ^(design/|uv\.lock$)
+      - id: check-merge-conflict
+      - id: detect-private-key
+        # The release-script tests carry a fabricated PEM (BEGIN/END around
+        # "abc") because the verifier under test checks for those markers.
+        exclude: ^src/tests/ufs_chem_assay/test_release_scripts\.py$
+      - id: check-added-large-files
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check
+        language: system
+        types:
+          - python
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format
+        language: system
+        types:
+          - python
+      - id: mypy
+        name: mypy
+        entry: uv run mypy
+        language: system
+        types:
+          - python
+        # Whole-src/ run (config's files setting): per-file mypy is unsound
+        # across module boundaries.
+        pass_filenames: false
+      - id: codespell
+        name: codespell
+        entry: uv run codespell
+        language: system
+        # [tool.codespell] skips design/ and the lock; whole-tree like mypy
+        pass_filenames: false
+      - id: uv-lock-check
+        name: uv lock --check
+        entry: uv lock --check
+        language: system
+        files: ^(pyproject\.toml|uv\.lock)$
+        pass_filenames: false
+      - id: vulture
+        name: vulture
+        entry: uv run vulture
+        language: system
+        types:
+          - python
+        # Whole-tree run ([tool.vulture] paths): a name's only use may be
+        # in another file.
+        pass_filenames: false
+      - id: yamlfix
+        name: yamlfix
+        entry: uv run yamlfix
+        language: system
+        types:
+          - yaml
+        exclude: ^design/
+      - id: yamllint
+        name: yamllint
+        entry: uv run yamllint --strict
+        language: system
+        types:
+          - yaml
+        exclude: ^design/

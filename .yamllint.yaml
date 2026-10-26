@@ -1,0 +1,15 @@
+# Kept coherent with [tool.yamlfix] in pyproject.toml (no document start).
+# design/ holds records; extern/ holds the submodules; build/ and .venv/ are generated.
+extends: default
+ignore: |
+  design/
+  extern/
+  build/
+  .venv/
+rules:
+  document-start: disable
+  line-length:
+    max: 120
+  # Workflow files key on `on:`, which yamlfix normalizes to the bare form; check truthy values, not keys.
+  truthy:
+    check-keys: false

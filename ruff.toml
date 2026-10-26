@@ -1,0 +1,18 @@
+# From ufs-chem-assay: ruff's expanded default rule set plus the extensions below.
+target-version = "py312"
+
+[lint]
+#   I    import sorting
+#   B    bugbear: likely bugs and design traps
+#   UP   pyupgrade: syntax the target version makes obsolete
+#   SIM  needless complexity
+#   RUF  ruff's own, incl. RUF100 (a noqa that suppresses nothing)
+#   T20  print(): the tooling logs, it does not print
+#   DTZ  naive datetimes
+#   PT   pytest style
+#   ARG  unused function/method/lambda arguments
+extend-select = ["I", "B", "UP", "SIM", "RUF", "T20", "DTZ", "PT", "ARG"]
+
+[format]
+# ruff formats Python code blocks inside Markdown; design/ holds records, not maintained code.
+exclude = ["design/**"]

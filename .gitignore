@@ -218,3 +218,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Project
+build/
+coverage-html/
+pytest-output.txt
+data/

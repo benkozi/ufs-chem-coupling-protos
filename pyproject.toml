@@ -1,0 +1,83 @@
+[project]
+name = "ufs-chem-coupling-protos"
+version = "0.1.0"
+description = "CATChem/CECE NUOPC coupling prototypes and their Python tooling (mock data and config generators)"
+# The container's interpreter (Ubuntu 24.04, python3 3.12.3); .python-version keeps uv on the same minor on a Mac.
+requires-python = ">=3.12"
+dependencies = [
+    # Every structured object in tools/ (configs, manifests, fixtures) is a pydantic model; the mypy plugin below needs it installed.
+    "pydantic>=2.0",
+]
+
+[dependency-groups]
+dev = [
+    "codespell>=2.4",
+    "mypy>=1.14",
+    "pre-commit>=4.0",
+    "pytest>=8.0",
+    "pytest-cov>=6",
+    # The 0.17 family, as in ufs-chem-assay: bumping the family is a change to the code, not to the pin alone.
+    "ruff>=0.17,<0.18",
+    "vulture>=2.16",
+    "yamlfix>=1.16",
+    "yamllint>=1.35",
+]
+
+[tool.uv]
+# No console script and no build backend: tools/ is run as scripts, uv sync installs the dependency groups only.
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tools/tests"]
+pythonpath = ["."]
+addopts = ["--strict-markers"]
+
+[tool.mypy]
+files = ["tools"]
+explicit_package_bases = true
+plugins = ["pydantic.mypy"]
+strict = true
+
+[tool.pydantic-mypy]
+init_typed = true
+init_forbid_extra = true
+
+# Coverage (the pytest CI job gates on it). Production code only; 100% as in ufs-chem-assay.
+[tool.coverage.run]
+source = ["tools"]
+omit = ["tools/tests/*"]
+
+[tool.coverage.report]
+fail_under = 100
+show_missing = true
+skip_covered = true
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+    "raise NotImplementedError",
+    "^\\s*\\.\\.\\.$",
+]
+
+# Spelling (pre-commit, whole tree). design/ holds records; extern/ holds the submodules, which have their own hooks.
+[tool.codespell]
+skip = "./design,./extern,./build,./coverage-html,./uv.lock,./.venv,./.git,./.mypy_cache,./.ruff_cache,./.pytest_cache,*.nc"
+
+# Dead-code detection (pre-commit, whole tree). Names bound by frameworks rather than by code are ignored.
+[tool.vulture]
+paths = ["tools"]
+min_confidence = 60
+ignore_names = ["model_config", "pytest_*"]
+ignore_decorators = [
+    "@field_validator",
+    "@model_validator",
+    "@classmethod",
+    "@property",
+    "@pytest.fixture",
+    "@pytest.hookimpl",
+]
+
+[tool.yamlfix]
+# Kept coherent with .yamllint.yaml (no document start).
+explicit_start = false
+sequence_style = "block_style"
+line_length = 120
