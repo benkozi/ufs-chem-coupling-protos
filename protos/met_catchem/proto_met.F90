@@ -8,7 +8,13 @@
 !! coordinates in DataInitialize and in every Advance; exports are stamped at step start (label_TimestampExport
 !! override) so CATChem's default CheckImport passes with the sequence MET / MET -> CATCHEM / CATCHEM. The
 !! tracer export persists CATChem's previous-step chemistry (copied back from the import side) and recomputes
-!! sphum analytically; nothing is read from or written to disk.
+!! sphum analytically; nothing is read from disk.
+!!
+!! Hosted imports (task 4): the driver's `met_hosted_imports::` rows name fields another component (CECE)
+!! exports that MET consumes as its own "cannot provide"/"share" imports, so the connector realizes them with
+!! the provider's allocation (NUOPC 2.4.7/2.4.8: a "will provide" import would be realized twice and never
+!! shared). After every step MET sums field x cell area per level over all PETs and PET 0 rewrites
+!! met_import_totals.yaml in the task-2 Totals layout; the stamp is the provider's export timestamp.
 module proto_met
   use ESMF
   use NUOPC
@@ -17,6 +23,7 @@ module proto_met
   use catchem_nuopc_interface, only: load_field_config, field_config
   use proto_manifest
   use proto_met_analytic
+  use proto_totals
   implicit none
   private
 
@@ -24,11 +31,13 @@ module proto_met
 
   character(len=*), parameter :: STATE_LABEL = "proto_met_state"
   character(len=*), parameter :: TRACER_FIELD = "inst_tracer_mass_frac"
+  character(len=*), parameter :: TOTALS_FILE = "met_import_totals.yaml"   !< tools.settings met_totals_filename
   integer, parameter :: TRACER_NAME_LEN = 32   !< the FV3 cap writes character(len=32) arrays
 
   character(len=ESMF_MAXPATHLEN), save :: cfg_manifest = ''
   character(len=ESMF_MAXPATHLEN), save :: cfg_data_root = '.'
   character(len=ESMF_MAXPATHLEN), save :: cfg_mapping = ''
+  type(hosted_spec), allocatable, save :: cfg_hosted(:)
 
   type field_spec
     character(len=128) :: name = ''
@@ -44,6 +53,14 @@ module proto_met
     type(field_spec), allocatable :: exports(:), imports(:)
     type(ESMF_Time) :: step_start
     integer :: step = 0
+    ! hosted imports and their totals: tot(level, record, hosted), one stamp per record
+    type(ESMF_VM) :: vm
+    integer :: local_pet = 0
+    logical :: catchem_present = .false.   !< CATChem's exports are connected (its tracers are copied back)
+    type(hosted_spec), allocatable :: hosted(:)
+    real(rk), allocatable :: tot(:, :, :)
+    character(len=STAMP_LEN), allocatable :: stamps(:)
+    integer :: nrec = 0
     ! per-step work arrays (surface and column)
     real(rk), allocatable :: ts(:, :), ps(:, :), cosz(:, :)
     real(rk), allocatable :: pedge(:, :, :), pmid(:, :, :), temp(:, :, :), phie(:, :, :), phim(:, :, :)
@@ -56,12 +73,15 @@ module proto_met
 
 contains
 
-  !> Called by the driver before NUOPC_DriverAddComp, like cc_nuopc_set_config_file for the cap.
-  subroutine proto_met_configure(manifest, data_root, mapping_file)
+  !> Called by the driver before NUOPC_DriverAddComp, like cc_nuopc_set_config_file for the cap. `hosted`
+  !! lists the imports MET hosts for another component's exports (may be empty).
+  subroutine proto_met_configure(manifest, data_root, mapping_file, hosted)
     character(len=*), intent(in) :: manifest, data_root, mapping_file
+    type(hosted_spec), intent(in) :: hosted(:)
     cfg_manifest = manifest
     cfg_data_root = data_root
     cfg_mapping = mapping_file
+    cfg_hosted = hosted
   end subroutine proto_met_configure
 
   subroutine SetServices(model, rc)
@@ -169,8 +189,22 @@ contains
                            TransferOfferGeomObject="will provide", SharePolicyField="share", SharePolicyGeomObject="share", rc=rc)
       if (ESMF_LogFoundError(rcToCheck=rc, msg="MET: advertise import "//trim(s%imports(i)%name), line=__LINE__, file=__FILE__)) return
     end do
-    call ESMF_LogWrite("MET: advertised "//itoa(size(s%exports))//" exports and "//itoa(size(s%imports))// &
-                       " imports (CATChem's exports) from "//trim(cfg_mapping), ESMF_LOGMSG_INFO)
+    ! Hosted imports: the provider realizes ("will provide"), MET accepts ("cannot provide"), both share, so
+    ! the connector hands MET the provider's allocation (NUOPC 2.4.7 table, 2.4.8).
+    if (allocated(cfg_hosted)) then
+      s%hosted = cfg_hosted
+    else
+      allocate (s%hosted(0))
+    end if
+    do i = 1, size(s%hosted)
+      call NUOPC_Advertise(importState, StandardName=trim(s%hosted(i)%standard_name), name=trim(s%hosted(i)%standard_name), &
+                           TransferOfferGeomObject="cannot provide", SharePolicyField="share", SharePolicyGeomObject="share", rc=rc)
+      if (ESMF_LogFoundError(rcToCheck=rc, msg="MET: advertise hosted import "//trim(s%hosted(i)%standard_name), line=__LINE__, file=__FILE__)) return
+      call NUOPC_FieldDictionaryGetEntry(trim(s%hosted(i)%standard_name), canonicalUnits=s%hosted(i)%units, rc=rc)
+      if (ESMF_LogFoundError(rcToCheck=rc, msg="MET: dictionary entry of "//trim(s%hosted(i)%standard_name), line=__LINE__, file=__FILE__)) return
+    end do
+    call ESMF_LogWrite("MET: advertised "//itoa(size(s%exports))//" exports, "//itoa(size(s%imports))// &
+                       " imports (CATChem's exports) from "//trim(cfg_mapping)//" and "//itoa(size(s%hosted))//" hosted imports", ESMF_LOGMSG_INFO)
   end subroutine Advertise
 
   subroutine Realize(model, rc)
@@ -182,7 +216,7 @@ contains
     type(ESMF_VM) :: vm
     real(rk), pointer :: p2(:, :)
     real(rk) :: area_sum(1), area_total
-    integer :: i, j, local_de_count, tile_count
+    integer :: i, j, local_de_count, tile_count, n_kept
     rc = ESMF_SUCCESS
     s => state_of(model, rc); if (rc /= ESMF_SUCCESS) return
     call NUOPC_ModelGet(model, importState=importState, exportState=exportState, rc=rc)
@@ -222,6 +256,9 @@ contains
     ! The six tiles must cover the sphere: a check of the grid's corner coordinates, logged on every PET.
     call ESMF_GridCompGet(model, vm=vm, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
+    s%vm = vm
+    call ESMF_VMGet(vm, localPet=s%local_pet, rc=rc)
+    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
     area_sum(1) = sum(s%area)
     call ESMF_VMAllFullReduce(vm, area_sum, area_total, 1, ESMF_REDUCE_SUM, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
@@ -245,10 +282,33 @@ contains
       call NUOPC_Realize(exportState, field=field, rc=rc)
       if (ESMF_LogFoundError(rcToCheck=rc, msg="MET: realize export "//trim(s%exports(i)%name), line=__LINE__, file=__FILE__)) return
     end do
+    ! CATChem's exports are hosted only when CATChem runs: an unconnected one (no CATCHEM in the component
+    ! list) is removed from the state, like CECE removes its unconnected exports, or NUOPC_ModelBase stops
+    ! with "Import Fields not all connected". A hosted import of another provider that is not connected is a
+    ! configuration error, not a removal.
+    n_kept = 0
     do i = 1, size(s%imports)
+      if (.not. NUOPC_IsConnected(importState, fieldName=trim(s%imports(i)%name), rc=rc)) then
+        if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
+        call ESMF_StateRemove(importState, (/trim(s%imports(i)%name)/), rc=rc)
+        if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
+        call ESMF_LogWrite("MET: removed unconnected hosted CATChem export "//trim(s%imports(i)%name), ESMF_LOGMSG_INFO)
+        cycle
+      end if
+      n_kept = n_kept + 1
       field = create_field(s, s%imports(i), rc); if (rc /= ESMF_SUCCESS) return
       call NUOPC_Realize(importState, field=field, rc=rc)
       if (ESMF_LogFoundError(rcToCheck=rc, msg="MET: realize import "//trim(s%imports(i)%name), line=__LINE__, file=__FILE__)) return
+    end do
+    s%catchem_present = n_kept > 0
+    do i = 1, size(s%hosted)
+      if (.not. NUOPC_IsConnected(importState, fieldName=trim(s%hosted(i)%standard_name), rc=rc)) then
+        if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
+        call ESMF_LogSetError(ESMF_RC_ARG_BAD, msg="MET: hosted import "//trim(s%hosted(i)%standard_name)// &
+                              " is not connected: no component exports it (check the CECE nuopc.export_fields and the run sequence)", &
+                              line=__LINE__, file=__FILE__, rcToReturn=rc)
+        return
+      end if
     end do
     call ESMF_LogWrite("MET: realized "//itoa(size(s%exports))//" exports and "//itoa(size(s%imports))// &
                        " imports on a "//itoa(tile_count)//"-tile grid, local DE "//itoa(s%nx)//"x"//itoa(s%ny)// &
@@ -319,20 +379,63 @@ contains
     type(ESMF_GridComp) :: model
     integer, intent(out) :: rc
     type(met_state), pointer :: s
-    type(ESMF_State) :: exportState
+    type(ESMF_State) :: importState, exportState
     type(ESMF_Clock) :: clock
     type(ESMF_Time) :: now
     type(ESMF_Field) :: field
+    real(rk), pointer :: p3(:, :, :)
     character(len=64) :: share_field, share_geom
-    integer :: i, n_shared
+    real(ESMF_KIND_R8) :: n_steps   !< ESMF_ClockGet runTimeStepCount is a real
+    integer :: i, n_shared, rank, max_lev
     rc = ESMF_SUCCESS
     s => state_of(model, rc); if (rc /= ESMF_SUCCESS) return
-    call NUOPC_ModelGet(model, modelClock=clock, exportState=exportState, rc=rc)
+    call NUOPC_ModelGet(model, modelClock=clock, importState=importState, exportState=exportState, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
     call ESMF_ClockGet(clock, currTime=now, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
     s%step_start = now
     call fill_exports(s, exportState, now, rc); if (rc /= ESMF_SUCCESS) return
+    ! Hosted imports: realized by the connector with the provider's storage by now; the shared status is the
+    ! proof, anything else is an error (a copy would hide a decomposition mismatch).
+    max_lev = 1
+    do i = 1, size(s%hosted)
+      call ESMF_StateGet(importState, itemName=trim(s%hosted(i)%standard_name), field=field, rc=rc)
+      if (ESMF_LogFoundError(rcToCheck=rc, msg="MET: hosted import "//trim(s%hosted(i)%standard_name)//" missing", line=__LINE__, file=__FILE__)) return
+      call NUOPC_GetAttribute(field, name="ShareStatusField", value=share_field, rc=rc)
+      if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
+      call NUOPC_GetAttribute(field, name="ShareStatusGeomObject", value=share_geom, rc=rc)
+      if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
+      call ESMF_FieldGet(field, rank=rank, rc=rc)
+      if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
+      select case (rank)
+      case (2)
+        s%hosted(i)%nlev = 1
+      case (3)
+        nullify (p3); call ESMF_FieldGet(field, farrayPtr=p3, rc=rc)
+        if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
+        s%hosted(i)%nlev = size(p3, 3)
+      case default
+        call ESMF_LogSetError(ESMF_RC_ARG_BAD, msg="MET: hosted import "//trim(s%hosted(i)%standard_name)//" has rank "//itoa(rank)// &
+                              "; 2 or 3 expected", line=__LINE__, file=__FILE__, rcToReturn=rc)
+        return
+      end select
+      max_lev = max(max_lev, s%hosted(i)%nlev)
+      call ESMF_LogWrite("MET: hosted import "//trim(s%hosted(i)%standard_name)//" ShareStatusField="//trim(share_field)// &
+                         " ShareStatusGeomObject="//trim(share_geom)//" rank="//itoa(rank)//" levels="//itoa(s%hosted(i)%nlev)// &
+                         " units="//trim(s%hosted(i)%units), ESMF_LOGMSG_INFO)
+      if (trim(share_field) /= "shared") then
+        call ESMF_LogSetError(ESMF_RC_ARG_BAD, msg="MET: hosted import "//trim(s%hosted(i)%standard_name)// &
+                              " is not reference-shared (ShareStatusField="//trim(share_field)//")", line=__LINE__, file=__FILE__, rcToReturn=rc)
+        return
+      end if
+    end do
+    if (size(s%hosted) > 0) then
+      call ESMF_ClockGet(clock, runTimeStepCount=n_steps, rc=rc)
+      if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
+      allocate (s%tot(max_lev, nint(n_steps) + 1, size(s%hosted)), s%stamps(nint(n_steps) + 1))
+      s%tot = 0.0_rk
+      s%nrec = 0
+    end if
     ! The connectors have negotiated sharing by now: report it (the shared status is the proof that the cap
     ! received MET's allocations, not copies).
     n_shared = 0
@@ -382,28 +485,99 @@ contains
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
     s%step_start = now
     ! Persist CATChem's chemistry: its previous-step tracer export (MET's import) becomes this step's tracer
-    ! import for every slot but sphum, which fill_exports recomputes.
-    call ESMF_StateGet(importState, itemName=TRACER_FIELD, field=fin, rc=rc)
-    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
-    call ESMF_StateGet(exportState, itemName=TRACER_FIELD, field=fout, rc=rc)
-    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
-    nullify (tin, tout)
-    call ESMF_FieldGet(fin, farrayPtr=tin, rc=rc)
-    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
-    call ESMF_FieldGet(fout, farrayPtr=tout, rc=rc)
-    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
-    do j = 1, s%ntr
-      if (j /= s%sphum) tout(:, :, :, j) = tin(:, :, :, j)
-    end do
+    ! import for every slot but sphum, which fill_exports recomputes. Without CATChem the tracers stay as
+    ! DataInitialize left them.
+    if (s%catchem_present) then
+      call ESMF_StateGet(importState, itemName=TRACER_FIELD, field=fin, rc=rc)
+      if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
+      call ESMF_StateGet(exportState, itemName=TRACER_FIELD, field=fout, rc=rc)
+      if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
+      nullify (tin, tout)
+      call ESMF_FieldGet(fin, farrayPtr=tin, rc=rc)
+      if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
+      call ESMF_FieldGet(fout, farrayPtr=tout, rc=rc)
+      if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
+      do j = 1, s%ntr
+        if (j /= s%sphum) tout(:, :, :, j) = tin(:, :, :, j)
+      end do
+    end if
     call fill_exports(s, exportState, now, rc); if (rc /= ESMF_SUCCESS) return
+    call record_hosted(s, importState, now, rc); if (rc /= ESMF_SUCCESS) return
     s%step = s%step + 1
     if (s%step == 1 .or. mod(s%step, 10) == 0) then
       call ESMF_TimeGet(now, timeString=stamp, rc=rc)
       if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
-      call ESMF_LogWrite("MET: step "//itoa(s%step)//" at "//trim(stamp)//": Ts(1,1)="//ftoa(s%ts(1, 1))// &
-                         " K, ps(1,1)="//ftoa(s%ps(1, 1))//" Pa, seas1 max="//ftoa(maxval(tout(:, :, :, min(2, s%ntr)))), ESMF_LOGMSG_INFO)
+      if (s%catchem_present) then
+        call ESMF_LogWrite("MET: step "//itoa(s%step)//" at "//trim(stamp)//": Ts(1,1)="//ftoa(s%ts(1, 1))// &
+                           " K, ps(1,1)="//ftoa(s%ps(1, 1))//" Pa, seas1 max="//ftoa(maxval(tout(:, :, :, min(2, s%ntr)))), ESMF_LOGMSG_INFO)
+      else
+        call ESMF_LogWrite("MET: step "//itoa(s%step)//" at "//trim(stamp)//": Ts(1,1)="//ftoa(s%ts(1, 1))// &
+                           " K, ps(1,1)="//ftoa(s%ps(1, 1))//" Pa", ESMF_LOGMSG_INFO)
+      end if
     end if
   end subroutine Advance
+
+  !> One record per step for every hosted import: the global sum of field x cell area per level
+  !! (ESMF_VMAllFullReduce), stamped with the provider's export timestamp (CECE stamps at step start) and
+  !! rewritten by PET 0 as met_import_totals.yaml in the run directory.
+  subroutine record_hosted(s, importState, now, rc)
+    type(met_state), intent(inout) :: s
+    type(ESMF_State), intent(inout) :: importState
+    type(ESMF_Time), intent(in) :: now
+    integer, intent(out) :: rc
+    type(ESMF_Field) :: field
+    type(ESMF_Time) :: stamp_time
+    real(rk), pointer :: p2(:, :), p3(:, :, :)
+    real(rk) :: local_sum(1), total
+    logical :: valid
+    character(len=32) :: stamp
+    character(len=512) :: line
+    integer :: h, k, rank
+    rc = ESMF_SUCCESS
+    if (size(s%hosted) == 0) return
+    if (s%nrec >= size(s%stamps)) then
+      call ESMF_LogSetError(ESMF_RC_ARG_BAD, msg="MET: more steps than the clock announced; totals table full", &
+                            line=__LINE__, file=__FILE__, rcToReturn=rc)
+      return
+    end if
+    s%nrec = s%nrec + 1
+    line = "MET: totals"
+    do h = 1, size(s%hosted)
+      call ESMF_StateGet(importState, itemName=trim(s%hosted(h)%standard_name), field=field, rc=rc)
+      if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
+      if (h == 1) then
+        call NUOPC_GetTimestamp(field, isValid=valid, time=stamp_time, rc=rc)
+        if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
+        if (.not. valid) stamp_time = now
+        call ESMF_TimeGet(stamp_time, timeString=stamp, rc=rc)
+        if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
+        s%stamps(s%nrec) = trim(stamp)//"Z"
+        line = trim(line)//" "//trim(stamp)
+      end if
+      call ESMF_FieldGet(field, rank=rank, rc=rc)
+      if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
+      do k = 1, s%hosted(h)%nlev
+        if (rank == 2) then
+          nullify (p2); call ESMF_FieldGet(field, farrayPtr=p2, rc=rc)
+          if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
+          local_sum(1) = sum(p2 * s%area)
+        else
+          nullify (p3); call ESMF_FieldGet(field, farrayPtr=p3, rc=rc)
+          if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
+          local_sum(1) = sum(p3(:, :, k) * s%area)
+        end if
+        call ESMF_VMAllFullReduce(s%vm, local_sum, total, 1, ESMF_REDUCE_SUM, rc=rc)
+        if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
+        s%tot(k, s%nrec, h) = total
+      end do
+      line = trim(line)//" "//trim(s%hosted(h)%category)//"/"//trim(s%hosted(h)%variable)//" = "//ftoa(s%tot(1, s%nrec, h))
+    end do
+    call ESMF_LogWrite(trim(line), ESMF_LOGMSG_INFO)
+    if (s%local_pet == 0) then
+      call proto_totals_write(TOTALS_FILE, s%hosted, s%nrec, s%stamps, s%tot, rc)
+      if (ESMF_LogFoundError(rcToCheck=rc, msg="MET: writing "//TOTALS_FILE, line=__LINE__, file=__FILE__)) return
+    end if
+  end subroutine record_hosted
 
   !> Exports carry the step-start stamp (CECE's convention) so CATChem's default CheckImport, which runs
   !! after MET in the same step, finds them at its current time.

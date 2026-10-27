@@ -97,6 +97,27 @@ class Settings(BaseSettings):
         default="fix", description="Subdirectory of --out holding the fix files."
     )
 
+    # conservation check (task 4)
+    met_totals_filename: str = Field(
+        default="met_import_totals.yaml",
+        description="Name of the totals file MET writes in its run directory (protos/met_catchem/proto_met.F90 TOTALS_FILE).",
+    )
+    conservation_rtol: float = Field(
+        default=2e-6,
+        description="Default relative tolerance of check_conservation (--rtol wins): the C48 anthro/NO error measured in task 4 (1.529e-6) rounded up.",
+        gt=0,
+    )
+    conservation_atol: float = Field(
+        default=1e-12,
+        description="Absolute tolerance of check_conservation for records whose expected total is zero (--atol wins).",
+        ge=0,
+    )
+    conservation_min_matches: int = Field(
+        default=24,
+        description="Smallest number of common time stamps check_conservation accepts (--min-matches wins): the hourly records inside a 24 h run.",
+        ge=1,
+    )
+
     # tests
     fixture_dir: Path = Field(
         default=Path("data/fixtures/C48"),

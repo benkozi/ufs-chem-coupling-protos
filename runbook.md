@@ -103,7 +103,7 @@ On the Mac, outside the container: `uv sync --frozen`, `uv run pre-commit run --
 | Path | Repository | Branch | Pinned commit |
 | --- | --- | --- | --- |
 | `extern/CATChem` | `https://github.com/bbakernoaa/CATChem.git` | `feature/rework` | `84532349` |
-| `extern/CECE` | `https://github.com/ufs-community/CECE.git` | `develop` | `25f7209` |
+| `extern/CECE` | `https://github.com/benkozi/CECE.git` (fork of `ufs-community/CECE`) | `feature/multi-tile-host-decomp` (task 4, cut from upstream `develop` `25f7209`; section 10) | the branch tip |
 
 `extern/CECE` carries `extern/helm` (NOAA-EMC/HELM) and `extern/yaml-cpp`; `extern/CATChem` carries `src/external/GOCART` and `src/external/musica` (unused with `CATCHEM_BUILD_MUSICA=OFF`).
 
@@ -131,7 +131,7 @@ Two fixes the smoke tests forced: `ESMF_Initialize` takes `logkindflag=` in ESMF
 
 - **Apple Silicon**: the container runs under x86_64 emulation. pre-commit and pytest are fine; MPI launches are slow under emulation, and CI (`ubuntu-latest`, native amd64) is the authority for `ctest`. **With Docker Desktop's Rosetta emulation, nothing in the image that initializes HDF5 runs at all**: any `nc_open` (even the view's `ncdump -h`) dies with `SIGILL`, because `libhdf5.so.310` (spack, `linux-zen2`) executes the x87 instruction `ffreep` in its type initialization and Rosetta does not emulate x87 (found in task 3, 2026-10-27). So `ESMF_GridCreateMosaic` and CATChem's aqmio writer cannot run on such a Mac; the two C48 prototype runs of `ctest -L ci` fail there with that signal and pass in CI. Local alternatives: `tools/ci.sh test ci` (section 4: the tests as a build step on the cloud builder's native amd64 node), `ctest -L local` (section 9, the file-free variant in the local daemon), or switching Docker Desktop from Rosetta to QEMU emulation (Settings, needs a restart; untested).
 - **Two netCDF-C installs** in the base image (apt 4.9.2 under `/usr`, spack 4.9.3 in the view; ESMF links the spack one). Spack's netcdf-c installs no CMake package file and apt's does, so a plain `find_package(netCDF CONFIG)` picks apt's regardless of `CMAKE_PREFIX_PATH` (CECE did, in the first task-1 build). The image therefore sets `PKG_CONFIG_PATH` to the view (HELM's AXIS uses pkg-config, `netcdf.pc` → 4.9.3) and CECE is configured with `-DCMAKE_DISABLE_FIND_PACKAGE_netCDF=ON`, which sends CECE to its `NetCDF_ROOT` fallback (the path FindESMF derives from `esmf.mk`) and HELM's AMIO to its `nc-config` fallback (the view's `nc-config`, parallel-enabled). CATChem's own `FindNetCDF.cmake` finds the view directly. Any new CMake project in the image must do the same; check its configure log.
-- **ESMF embeds yaml-cpp**; CECE links spack's shared 0.8.0 and CATChem its vendored symbol-isolated copy. No conflict in separate builds; watch the first single-executable link (task 3/6).
+- **ESMF embeds yaml-cpp**; CECE links spack's shared 0.8.0 and CATChem its vendored symbol-isolated copy. The first single-executable link is task 4's `esmApp` (section 10, caveats).
 - **Fork pull requests** run CI with a read-only token: they read the GHCR build cache but cannot write it.
 - **Python 3.14 on the Mac hides annotation errors.** The host interpreter evaluates annotations lazily; the image's 3.12.3 evaluates them at import. Every module under `tools/` therefore starts with `from __future__ import annotations`, and `tools/ci.sh pytest` (3.12) is the check that counts: a subscripted runtime class in an annotation (`netCDF4.Variable[object]`) passed the host suite and failed only in the image (task 2).
 - **Fortran formatting**: `fprettify` runs as a pre-commit hook (`.fprettify.rc`: indent 2, operator spacing, nothing else; the submodules are excluded); `uv run fprettify --config-file .fprettify.rc <file>` formats a file by hand.
@@ -515,3 +515,91 @@ The local-daemon rows ran under Rosetta emulation on this Mac; the first row ran
 | `proto_met_catchem`, `proto_met_catchem_np12`, `proto_met_catchem_c96` in the local daemon on this Mac (Rosetta) | **not runnable**: `ESMF_GridCreateMosaic` opens the mosaic with netCDF and HDF5's initialization executes x87 `ffreep`, which Rosetta does not emulate (`SIGILL`, section 7); hence `tools/ci.sh test`. |
 
 Link check (task 3): `nm -C build/protos/met_catchem/esmApp` shows 990 `catchem_yaml::` and 770 `YAML::` symbols, CATChem's vendored yaml-cpp and ESMF's embedded one in different namespaces, so the long-standing yaml-cpp reminder is closed for CATChem.
+
+## 10. CECE on the tile grid with MET as the consumer (task 4)
+
+`protos/cece_met/` is the second prototype: CECE's NUOPC cap (`cece_nuopc_cap` from the image) and MET under the task-3 driver on the task-2 mosaic grid. CECE regrids one species, `NO`, from the task-2 `anthro.nc` inventory (1°) onto each PET's tile block with its own AXIS first-order conservative method and exports it; MET hosts the export as a reference-shared import and writes the global totals every step; a Python checker compares them with the inventory's recorded totals. The executable is `protos/met_catchem/esmApp` (the config's `EARTH_component_list` picks the children, `prototype:` names the run); `protos/cece_met/` holds the config templates and the tests.
+
+### CECE branch
+
+`extern/CECE` is pinned to `benkozi/CECE` branch `feature/multi-tile-host-decomp` (cut from upstream `develop` `25f7209`; `.gitmodules` names the fork over HTTPS for CI, the local remote may be SSH). The branch adds the **host-block path** to the cap: on a parent grid with `tileCount > 1` the cap no longer gathers global coordinates (that code places every tile's block at the same origin and is silently wrong on six tiles) but hands the core this PET's single DE block, centres and the true cell corners from the grid's CORNER stagger (`cece_cap_grid.F90` `cece_cap_extract_local_block`), through the new C ABI entry `cece_sim_create_from_esmf_block` (`GridSpec::from_esmf_block`, corners and `host_block` on `GridSpec`/`CeceGridSpec`). The core then runs the block as its whole grid (`BandDecomposition::whole_grid`, `CeceDriverOrchestrator` host-block constructor, `cece_driver_create_block`) and the regridder builds the destination mesh from the explicit corners (`build_block_mesh_with_corners`, `build_regrid_plan` corner arguments). `output.enabled` and `local_time.enabled` are refused on a host block (both gather by latitude band). The simulation also registers a core export field for every `nuopc.export_fields` species (on `develop` only `output.fields` entries get one, so a coupled run without NetCDF output could not bind its export: "unknown export species 'NO' (not present in export_state.fields)"). The single-tile paths are unchanged. Tests on the branch: `test_grid_spec_esmf` (block cases), `test_grid_spec_block` (gtest: shapes, wrapping, the block mesh equals the synthesized one on a uniform grid); they run in CECE's CI or dev container, not in this image (`CECE_BUILD_TESTING=OFF`, no GTest).
+
+Requirement of the path, measured with `tests/grid_probe` (`tools/ci.sh test probe -V`, 2026-10-27): a DE owns the closed `(nx+1) x (ny+1)` corner ring only when it reaches the tile's upper edges. At 6 PETs every DE is a whole tile (`48x48` cells, `49x49` corners); at 12 PETs the lower DE of a tile has `49x24` corners for `48x24` cells and the cap stops with `[CapGrid] DE on tile t owns an open corner ring … run with one DE per tile`. Multi-DE tiles need a corner halo (a later task); the task-4 runs use 6 PETs.
+
+### Build
+
+`cmake/cece_build_tree.cmake` defines `CECE::cece_nuopc_cap` over the image's build tree (`CECE_ROOT=/opt/cece`): the cap archive, `libcece_driver.so`, `libcece_core.so`, HELM AMIO/LOGS (shared, not installed), AXIS/DAGR/CONF/HALO/TICK and Kokkos Kernels (static, one linker group), spack yaml-cpp, Kokkos, OpenMP, MPI C++ and ESMF, with an rpath to the three directories of the shared libraries (nothing to set in the environment). `tools/ci.sh build` after a CECE edit rebuilds the `cece` and `final` stages (`cece` about 200 s on the cloud builder); nothing else.
+
+### Run
+
+Inside the image (`tools/ci.sh test ci` on the cloud builder is the way on Apple silicon; see section 4):
+
+```bash
+docker compose run --rm ci sh -c 'cd build/protos/cece_met/run_C48_np6 && mpirun -np 6 ../../met_catchem/esmApp ../esm.C48.configure'
+```
+
+```bash
+docker compose run --rm ci sh -c 'cd build/protos/cece_met/run_C96_np6 && mpirun -np 6 ../../met_catchem/esmApp ../esm.C96.configure'
+```
+
+On success PET 0 prints `cece_met: completed 120 steps to 2021-03-23T06:00:00`. The run directory holds `met_import_totals.yaml` (PET 0, rewritten every step) and the PET logs with the evidence: `[Cap] Parent grid: tileCount=6, local DE on tile t, block i=1..48 j=1..48 (48x48), corners 49x49`, `[DRIVER] host-block destination: 48x48 cells with 2401 explicit corners; band j0=0 j1=48`, `[Cap] Realized export field "NO" (48x48x1) bound to simulation`, `MET: hosted import NO_emission_flux ShareStatusField=shared ShareStatusGeomObject=shared rank=3 levels=1 units=kg m-2 s-1`, and one `MET: totals <stamp> anthro/NO = …` line per step.
+
+| Config key (driver, `esm.configure`) | Meaning |
+| --- | --- |
+| `prototype: cece_met` | the run's name: the summary line, the driver component and the CTest pass expression |
+| `EARTH_component_list: CECE MET` | the children in order (CATCHEM, MET and CECE are known); the grid is attached to MET and CECE |
+| `cece_config_file:` | the rendered CECE YAML (`build/protos/cece_met/cece_anthro_no.<res>.yaml`), passed with `CECE_SetConfigPath` |
+| `met_hosted_imports::` | rows `<standard name> <category> <variable> <source file>`: MET advertises each as a `"cannot provide"`/`"share"`/`"share"` import, checks `ShareStatusField=shared` and records its totals under `categories.<category>.variables.<variable>` |
+| `runSeq::` | `@720 / CECE / CECE -> MET / MET / @` |
+
+| CECE YAML key (`configs/prescribed/cece_met/cece_anthro_no.yaml.in`) | Value and why |
+| --- | --- |
+| `driver.start_time`, `end_time`, `timestep_seconds` | the manifest clock, rendered by CMake from `tools/defaults/manifest.yaml` (GNU `date` adds the duration) |
+| `driver.grid.nz: 1` | the only grid key CECE reads on the parent-grid path; the export is rank 3 with one ungridded level |
+| `cece_data.streams[0]` | `anthro.nc` as a `series` stream (CATChem's hourly cadence is a 25-record axis, CECE's `cadence: hourly` would be a 24-record profile), `tintalgo: linear`, `taxmode: limit` (a step outside the axis fails), `mapalgo: consd`, variable `NO` → `NO_anthro` |
+| `species."NO"`, `nuopc.export_fields."NO"` | the export, `standard_name: NO_emission_flux` (in `fd_protos.yaml`); keep `"NO"` quoted |
+| `output.enabled: false`, no `local_time` | both are band-gathered and refused on a host block |
+
+`uv run --no-sync python extern/CECE/scripts/validate_cece_config.py build/protos/cece_met/cece_anthro_no.C48.yaml` validates the rendered YAML against CECE's schema (the `cece_config_valid` test).
+
+### Totals and the conservation check
+
+`met_import_totals.yaml` has the layout of `tools.inventories.Totals` with the `times` list task 4 added to `CategoryTotals` (the generator writes it too; a `totals.yaml` from before task 4 has no `times` and the checker refuses it): `categories.anthro.{file, times[120], variables.'NO'.{units, records[120][1]}}`, one record per coupling step, each the global Σ field · area in kg s⁻¹ (`ESMF_FieldRegridGetArea` × R², `ESMF_VMAllFullReduce`), stamped with CECE's export time stamp, i.e. the step start, the time CECE evaluates its streams at.
+
+```bash
+uv run python -m tools.check_conservation --expected data/C48/inventories/totals.yaml --run-dir build/protos/cece_met/run_C48_np6 --category anthro --variable NO --rtol 1e-4
+```
+
+The checker matches the two files by time stamp (24 common hourly stamps in a 24 h run; `--min-matches`, default 24), logs every matched record and the relative error, and exits 0 when every record is within `--rtol` (an expected total of zero is judged absolutely by `--atol`), 1 when one exceeds it (the message names the stamp), 2 on a usage error. Defaults are settings (`PROTOS_CONSERVATION_RTOL`, `_ATOL`, `_MIN_MATCHES`, `PROTOS_MET_TOTALS_FILENAME`); the CTest registration passes the measured tolerance explicitly.
+
+### Tests
+
+| Test | Label | What |
+| --- | --- | --- |
+| `cece_config_valid` | `ci` | CECE's validator on the rendered C48 YAML |
+| `proto_cece_met` | `ci` | C48, 6 PETs, 24 h in 120 steps; `FIXTURES_SETUP cece_met_run`; run directory `build/protos/cece_met/run_C48_np6/` |
+| `conservation_cece` | `ci` | the checker on that run against `data/C48/inventories/totals.yaml`, `--rtol` = the measured error rounded up (below) |
+| `conservation_cece_tight_tolerance_fails` | `ci` | the same with `--rtol 1e-15`, expects `exceeds rtol` (the rule's failure case) |
+| `proto_cece_met_c96` | `c96` | C96, 6 PETs, `FIXTURES_REQUIRED mockdata_c96`; by hand only |
+| `grid_probe_np6`, `grid_probe_np12` | `probe` | the corner-ring probe (`tests/grid_probe`), never part of `ci` |
+
+### Measured (2026-10-27, `tools/ci.sh test ci` on the cloud builder's amd64 node)
+
+| Run | Result |
+| --- | --- |
+| `tools/ci.sh test ci` (the `test` stage on the cloud builder's amd64 node) | 11 of 11 `ci` tests pass: `proto_cece_met` 26.3 s, `conservation_cece` 0.7 s, `cece_config_valid` 0.1 s; the task-3 runs unchanged (`proto_met_catchem` 29.2 s, `proto_met_catchem_np12` 18.8 s); `ctest` total 84 s |
+| `proto_cece_met` (C48, 6 PETs, 120 steps) | every PET: `tileCount=6`, its tile, block `48x48`, corners `49x49`; `[DRIVER] host-block destination: 48x48 cells with 2401 explicit corners; band j0=0 j1=48`; `Realized export field "NO" (48x48x1) bound to simulation`; `MET: hosted import NO_emission_flux ShareStatusField=shared ShareStatusGeomObject=shared rank=3 levels=1 units=kg m-2 s-1`; 120 totals records, the first 4.2444e+03 kg s⁻¹ at 06:00, the last 4.2242e+03 at 05:48 |
+| `conservation_cece` (24 matched hourly stamps) | relative error between 4.5e-8 (09:00) and **1.529e-6** (02:00 next day); registered `--rtol 2e-6`; `conservation_cece_tight_tolerance_fails` passes on `exceeds rtol 1.0e-15` |
+| `tools/ci.sh test c96` (on request, 2026-10-27) | 3 of 3 `c96` tests pass in 144 s: `make_mock_data_c96` 8.0 s, `proto_met_catchem_c96` (12 PETs) 73.7 s, `proto_cece_met_c96` (6 PETs) 62.7 s; the C96 cap lines read `block i=1..96 j=1..96 (96x96), corners 97x97` and `Realized export field "NO" (96x96x1)`, the hosted import is `shared`, the last total 4.2242e+03 kg s⁻¹ (the inventory is grid-independent, so the C48 and C96 totals agree to the printed precision); no conservation test is registered at C96 (the `c96` label is a run, not a check) |
+| `tools/ci.sh test probe -V` (`grid_probe_np6`, `grid_probe_np12`) | 6 PETs: every DE a whole tile, corners `49x49`, DistGrid blocks `1..48 x 1..48` per tile, area/4π = 1.00000000; 12 PETs: blocks `1..48 x 1..24` and `25..48`, corners `49x24` (lower DE, open ring) and `49x25` (upper DE) |
+| `tools/ci.sh build` after the CECE edits | the `cece` stage rebuilt (about 3.5 min including Kokkos Kernels and HELM), then `final`; `base`, `python`, `kokkos`, `catchem` `CACHED` |
+
+Why the error is not zero: AXIS normalizes by destination polygon area and treats both grids as great-circle polygons, while the inventory's `area` variable and the task-2 totals are analytic (small-circle latitude edges); the two agree to rounding only on the cubed-sphere side (MET's `ESMF_FieldRegridGetArea` uses the same corners CECE regrids onto). A tighter check, MET's totals against AXIS's own source-mesh totals, is task 9 material.
+
+### Caveats
+
+- One DE per tile (6 PETs) until the corner halo exists; the cap says so by name at 12 PETs.
+- `esmApp` now links three yaml-cpp copies (CATChem's vendored `catchem_yaml::`, ESMF's embedded `YAML::`, CECE's shared spack `YAML::` 0.8.0): `nm -C` on the linked `esmApp` shows 990 `catchem_yaml::` and 770 `YAML::` symbols defined in the executable (unchanged from task 3) and `ldd` one shared `libyaml-cpp` (CECE's spack 0.8.0); the prototype runs and CECE parses its YAML, so the two `YAML::` copies coexist at run time. Which definition CECE's shared library binds to was not checked (`LD_DEBUG=bindings` would tell); a mismatch would surface as a parse failure or a crash in CECE's config reader, neither seen.
+- The CECE shared libraries are reached through the rpath baked into `esmApp`; an executable built elsewhere against the same tree needs the same three directories (`/opt/cece/build`, `…/extern/helm/libs/amio`, `…/extern/helm/libs/logs`) on its rpath or `LD_LIBRARY_PATH`.
+- CECE's `end_time` is the run's stop time: a shorter one freezes the export after CECE reports completion (the cap logs "already complete"); a run longer than the inventory's 25 records fails in CECE (`taxmode: limit`), by design.
+- The CECE branch's own test suites are CECE CI's to run; this image cannot (`CECE_BUILD_TESTING=OFF`, no GTest).

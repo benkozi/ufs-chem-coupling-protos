@@ -1,0 +1,49 @@
+# cece_met driver configuration (ufs.configure shape), rendered by CMake from protos/cece_met/esm.configure.in
+# for @RES@. CECE exports one species regridded onto the host's tile grid; MET hosts it as a reference-shared
+# import and writes met_import_totals.yaml in the run directory. Paths are absolute. Edit a copy for a by-hand run.
+
+prototype: cece_met
+
+# EARTH #
+EARTH_component_list: CECE MET
+
+# CECE: the CECE NUOPC cap (cece_nuopc_cap) from the image, on all PETs (one DE per PET, the host's decomposition).
+CECE_petlist_bounds: -1 -1
+CECE_attributes::
+  Verbosity = high
+::
+
+# MET: the analytic meteorology provider (protos/met_catchem/proto_met.F90); here the consumer of CECE's export.
+MET_petlist_bounds: -1 -1
+MET_attributes::
+  Verbosity = high
+::
+
+# The task-2 manifest and the directory its relative paths are relative to (where make_mock_data was run).
+manifest: @PROTOS_ROOT@/data/@RES@/manifest.yaml
+data_root: @PROTOS_ROOT@
+field_dictionary: @PROTOS_ROOT@/configs/prescribed/met_catchem/fd_protos.yaml
+catchem_field_mapping_file: @PROTOS_ROOT@/extern/CATChem/drivers/nuopc/CATChem_field_mapping.yml
+cece_config_file: @CECE_CONFIG@
+
+# The fields MET hosts as "cannot provide"/"share" imports: <standard name> <category> <variable> <source file>
+# (the last three name the record in met_import_totals.yaml, in the layout of tools.inventories.Totals).
+met_hosted_imports::
+  NO_emission_flux anthro NO @PROTOS_ROOT@/data/@RES@/inventories/anthro.nc
+::
+
+# The cubed-sphere grid from the task-2 fix files through ESMF_GridCreateMosaic (see runbook.md section 9).
+grid_source: mosaic
+
+# Per-tile decomposition (nx ny), product = PET count / 6; default 1 x (PET count / 6). CECE's host-block
+# path needs one DE per tile (a closed corner ring), so the task-4 runs use 6 PETs.
+# regdecomp_per_tile: 1 1
+
+# One outer loop at the manifest's coupling step; CECE first, stamping its export at step start.
+runSeq::
+  @@STEP_SECONDS@
+    CECE
+    CECE -> MET
+    MET
+  @
+::

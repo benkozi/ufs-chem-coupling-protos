@@ -1,5 +1,6 @@
 # Prototype met_catchem: the NUOPC driver, the analytic MET provider and CATChem's cap on the
-# cubed-sphere grid read from the task-2 mosaic. See runbook.md section 9.
+# cubed-sphere grid read from the task-2 mosaic. See runbook.md section 9. The same esmApp serves every
+# prototype (the config's EARTH_component_list picks the children; cece_met lives in protos/cece_met/).
 
 add_executable(
   esmApp
@@ -8,8 +9,9 @@ add_executable(
   proto_met.F90
   proto_met_analytic.F90
   proto_manifest.F90
+  proto_totals.F90
 )
-target_link_libraries(esmApp PRIVATE CATChem::cc_nuopc)
+target_link_libraries(esmApp PRIVATE CATChem::cc_nuopc CECE::cece_nuopc_cap)
 set_target_properties(
   esmApp
   PROPERTIES
@@ -18,13 +20,8 @@ set_target_properties(
 )
 target_compile_options(esmApp PRIVATE $<$<COMPILE_LANGUAGE:Fortran>:-Wall;-ffree-line-length-none>)
 
-# The driver configs: one per resolution, absolute paths, the coupling step from the defaults file so the
-# run sequence and the manifest cannot drift.
-file(STRINGS ${PROJECT_SOURCE_DIR}/tools/defaults/manifest.yaml _step_line REGEX "^  step_seconds:")
-string(REGEX REPLACE "^  step_seconds: *([0-9]+).*$" "\\1" STEP_SECONDS "${_step_line}")
-if(NOT STEP_SECONDS MATCHES "^[0-9]+$")
-  message(FATAL_ERROR "cannot read clock.step_seconds from tools/defaults/manifest.yaml (got '${_step_line}')")
-endif()
+# The driver configs: one per resolution, absolute paths, the coupling step (STEP_SECONDS, read from the
+# defaults file by the top-level CMakeLists.txt) so the run sequence and the manifest cannot drift.
 set(PROTOS_ROOT ${PROJECT_SOURCE_DIR})
 set(_configs ${PROJECT_SOURCE_DIR}/configs/prescribed/met_catchem)
 # The driver configs, one per resolution, on the prescribed science config (diagnostics on).
