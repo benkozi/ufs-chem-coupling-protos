@@ -1,0 +1,43 @@
+# met_catchem driver configuration (ufs.configure shape), rendered by CMake from protos/met_catchem/esm.configure.in
+# for @RES@. Paths are absolute, so the run directory can be anywhere. Edit a copy for a by-hand run.
+
+# EARTH #
+EARTH_component_list: MET CATCHEM
+
+# MET: the analytic meteorology provider (protos/met_catchem/proto_met.F90). -1 -1 = all PETs.
+MET_petlist_bounds: -1 -1
+MET_attributes::
+  Verbosity = high
+::
+
+# CATCHEM: the CATChem NUOPC cap (cc_nuopc) from the image.
+CATCHEM_petlist_bounds: -1 -1
+CATCHEM_attributes::
+  Verbosity = high
+::
+
+# The task-2 manifest and the directory its relative paths are relative to (where make_mock_data was run).
+manifest: @PROTOS_ROOT@/data/@RES@/manifest.yaml
+data_root: @PROTOS_ROOT@
+field_dictionary: @PROTOS_ROOT@/configs/prescribed/met_catchem/fd_protos.yaml
+catchem_config_file: @CATCHEM_CONFIG@
+catchem_field_mapping_file: @PROTOS_ROOT@/extern/CATChem/drivers/nuopc/CATChem_field_mapping.yml
+
+# Where the cubed-sphere grid comes from: mosaic (the task-2 fix files through ESMF_GridCreateMosaic, the
+# prototype's grid) or analytic (ESMF_GridCreateCubedSphere, GEOS-5 coordinates, no file: a debug mode for a
+# machine whose amd64 emulation cannot run the image's HDF5, see runbook.md section 9).
+grid_source: @GRID_SOURCE@
+
+# Per-tile decomposition (nx ny), product = PET count / 6; default 1 x (PET count / 6). catchem_control at
+# 192 PETs uses 4 8.
+# regdecomp_per_tile: 4 8
+
+# One outer loop at the manifest's coupling step; providers first, stamping at step start.
+runSeq::
+  @@STEP_SECONDS@
+    MET
+    MET -> CATCHEM
+    CATCHEM
+    CATCHEM -> MET
+  @
+::

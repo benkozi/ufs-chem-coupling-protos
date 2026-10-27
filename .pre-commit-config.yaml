@@ -79,6 +79,17 @@ repos:
         language: system
         types:
           - python
+        # Whole-tree run ([tool.vulture] paths): pre-commit splits a long file list over parallel
+        # invocations, and a subset of files hides cross-file uses (false "unused" findings).
+        pass_filenames: false
+      - id: fprettify
+        name: fprettify
+        # Fortran spacing and indentation (.fprettify.rc); the submodules have their own hooks.
+        entry: env PYTHONWARNINGS=ignore::SyntaxWarning uv run fprettify --config-file .fprettify.rc
+        language: system
+        types:
+          - fortran
+        exclude: ^extern/
         # Whole-tree run ([tool.vulture] paths): a name's only use may be
         # in another file.
         pass_filenames: false

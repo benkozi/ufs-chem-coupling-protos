@@ -1,0 +1,43 @@
+# CATChem science configuration of the file-free debug variant (grid_source: analytic): CATChem_new_config.yml
+# with the aqmio diagnostics off, so nothing is written to disk. Keep the two files identical otherwise.
+simulation:
+  name: met_catchem
+  start_date: 20210322 0600
+  end_date: 20210323 0600
+  species_filename: ../../../extern/CATChem/tests/Configs/Default/CATChem_species.yml
+  verbose:
+    activate: false
+grid:
+  number_of_levels: 127
+timesteps:
+  transport_timestep_in_s: 720
+  chemistry_timestep_in_s: 720
+diagnostics:
+  output:
+    enabled: false
+    # relative to the run working directory (build/protos/met_catchem/run_<res>_np<N>/, git-ignored)
+    directory: catchem_diag
+    prefix: catchem
+    frequency: 3600
+    format: netcdf
+    diag_list:
+      - seas1
+      - seas2
+      - seas3
+      - seas4
+      - seas5
+  collection:
+    enabled: false
+run_phases:
+  proto:
+    description: Sea salt from the analytic meteorology; the only process without file inputs.
+    processes:
+      - seasalt
+processes:
+  seasalt:
+    activate: true
+    diagnostics: false
+    scheme: geos12
+  # The Fortran reader defaults this to true when absent: it must be written explicitly.
+  extemis:
+    activate: false

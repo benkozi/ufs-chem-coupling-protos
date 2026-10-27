@@ -4,6 +4,9 @@
 #   tools/ci.sh pre-commit   every hook on every file
 #   tools/ci.sh pytest       the Python tooling suite with coverage
 #   tools/ci.sh ctest        configure, build and run the `ci`-labelled CTest tests
+#   tools/ci.sh test [label] [ctest args]
+#                            the same on the cloud builder's native amd64 node, as the Dockerfile's `test`
+#                            stage (needed on Apple silicon, where Rosetta cannot run the image's HDF5)
 # The three command strings are the ones .github/workflows/ci.yaml runs; keep them identical.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -23,8 +26,15 @@ case "${1:-}" in
   pre-commit) run_in_image "$PRE_COMMIT_CMD" ;;
   pytest) run_in_image "$PYTEST_CMD" ;;
   ctest) run_in_image "$CTEST_CMD" ;;
+  test)
+    label="${2:-ci}"
+    shift $(( $# > 1 ? 2 : $# ))
+    docker buildx build --builder "$BUILDX_BUILDER" --platform linux/amd64 --target test \
+      --build-arg "CTEST_LABEL=${label}" --build-arg "CTEST_ARGS=$*" \
+      --no-cache-filter test --progress=plain . 2>&1 | grep -v -E '^#[0-9]+ (DONE|CACHED|\[internal\]|transferring|sha256:|extracting|resolve )'
+    ;;
   *)
-    echo "usage: $0 {build|pre-commit|pytest|ctest}" >&2
+    echo "usage: $0 {build|pre-commit|pytest|ctest|test [label] [ctest args]}" >&2
     exit 2
     ;;
 esac

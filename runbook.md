@@ -76,13 +76,25 @@ tools/ci.sh pytest
 tools/ci.sh ctest
 ```
 
+On Apple silicon the prototype runs of `ctest` cannot execute in the local daemon (section 7, Rosetta), so the same tests also run as a **build step on the cloud builder's native amd64 node**: the Dockerfile's `test` stage (`FROM final`, `COPY . /repo`, `uv sync`, `cmake`, `ctest -L ${CTEST_LABEL}`), built with `--no-cache-filter test` so the step always executes, its output being the build log:
+
+```bash
+tools/ci.sh test ci
+```
+
+```bash
+tools/ci.sh test c96
+```
+
+A third word onward is passed to ctest (`tools/ci.sh test ci -R proto_met_catchem$`). The fix files live in a BuildKit cache mount on the builder (`id=protos-data`), so the EMC download happens once per node; on failure the step prints the ESMF log errors of the prototype run directories. The image people run is still `final` (`compose.yaml` pins `target: final`).
+
 | Job | Command inside the container |
 | --- | --- |
 | pre-commit | `git config --global --add safe.directory /repo && uv sync --frozen && uv run pre-commit run --all-files` |
 | pytest | `git config --global --add safe.directory /repo && uv sync --frozen && uv run pytest tools/tests --cov --cov-report=term --cov-report=html:coverage-html` |
 | ctest | `git config --global --add safe.directory /repo && uv sync --frozen && cmake -S . -B build && cmake --build build && ctest --test-dir build --output-on-failure -L ci` |
 
-`ctest -L ci` runs the two smoke tests in `tests/smoke/` (`mpi_smoke`, 2 ranks, expects `ranks=2`; `esmf_version`, expects `ESMF_VERSION_STRING=8.9.1…`) and the `make_mock_data` fixture test in `tests/mockdata/` (section 8), which downloads the C48 fix files on first run. The `build/` and `data/` directories on the bind mount are created by the container; both are git-ignored and outside the Docker build context.
+`ctest -L ci` runs the two smoke tests in `tests/smoke/` (`mpi_smoke`, 2 ranks, expects `ranks=2`; `esmf_version`, expects `ESMF_VERSION_STRING=8.9.1…`), the `make_mock_data` fixture test in `tests/mockdata/` (section 8), which downloads the C48 fix files on first run, and the task-3 prototype tests in `protos/met_catchem/` (section 9: the manifest dump, the PET-rule failure case and the C48 runs on 6 and 12 PETs). The `build/` and `data/` directories on the bind mount are created by the container; both are git-ignored and outside the Docker build context.
 
 On the Mac, outside the container: `uv sync --frozen`, `uv run pre-commit run --all-files`, `uv run pytest tools/tests --cov` (host Python is 3.14 per `.python-version`; the image uses its own 3.12.3).
 
@@ -117,11 +129,12 @@ Two fixes the smoke tests forced: `ESMF_Initialize` takes `logkindflag=` in ESMF
 
 ## 7. Caveats
 
-- **Apple Silicon**: the container runs under x86_64 emulation. pre-commit and pytest are fine; MPI launches are slow under emulation, and CI (`ubuntu-latest`, native amd64) is the authority for `ctest`.
+- **Apple Silicon**: the container runs under x86_64 emulation. pre-commit and pytest are fine; MPI launches are slow under emulation, and CI (`ubuntu-latest`, native amd64) is the authority for `ctest`. **With Docker Desktop's Rosetta emulation, nothing in the image that initializes HDF5 runs at all**: any `nc_open` (even the view's `ncdump -h`) dies with `SIGILL`, because `libhdf5.so.310` (spack, `linux-zen2`) executes the x87 instruction `ffreep` in its type initialization and Rosetta does not emulate x87 (found in task 3, 2026-10-27). So `ESMF_GridCreateMosaic` and CATChem's aqmio writer cannot run on such a Mac; the two C48 prototype runs of `ctest -L ci` fail there with that signal and pass in CI. Local alternatives: `tools/ci.sh test ci` (section 4: the tests as a build step on the cloud builder's native amd64 node), `ctest -L local` (section 9, the file-free variant in the local daemon), or switching Docker Desktop from Rosetta to QEMU emulation (Settings, needs a restart; untested).
 - **Two netCDF-C installs** in the base image (apt 4.9.2 under `/usr`, spack 4.9.3 in the view; ESMF links the spack one). Spack's netcdf-c installs no CMake package file and apt's does, so a plain `find_package(netCDF CONFIG)` picks apt's regardless of `CMAKE_PREFIX_PATH` (CECE did, in the first task-1 build). The image therefore sets `PKG_CONFIG_PATH` to the view (HELM's AXIS uses pkg-config, `netcdf.pc` → 4.9.3) and CECE is configured with `-DCMAKE_DISABLE_FIND_PACKAGE_netCDF=ON`, which sends CECE to its `NetCDF_ROOT` fallback (the path FindESMF derives from `esmf.mk`) and HELM's AMIO to its `nc-config` fallback (the view's `nc-config`, parallel-enabled). CATChem's own `FindNetCDF.cmake` finds the view directly. Any new CMake project in the image must do the same; check its configure log.
 - **ESMF embeds yaml-cpp**; CECE links spack's shared 0.8.0 and CATChem its vendored symbol-isolated copy. No conflict in separate builds; watch the first single-executable link (task 3/6).
 - **Fork pull requests** run CI with a read-only token: they read the GHCR build cache but cannot write it.
 - **Python 3.14 on the Mac hides annotation errors.** The host interpreter evaluates annotations lazily; the image's 3.12.3 evaluates them at import. Every module under `tools/` therefore starts with `from __future__ import annotations`, and `tools/ci.sh pytest` (3.12) is the check that counts: a subscripted runtime class in an annotation (`netCDF4.Variable[object]`) passed the host suite and failed only in the image (task 2).
+- **Fortran formatting**: `fprettify` runs as a pre-commit hook (`.fprettify.rc`: indent 2, operator spacing, nothing else; the submodules are excluded); `uv run fprettify --config-file .fprettify.rc <file>` formats a file by hand.
 - **`pre-commit run --all-files` sees tracked files only.** On a checkout with new, not yet `git add`ed files the per-file hooks skip them; run the tools directly on new files or stage them first.
 
 ## 8. Mock data (task 2)
@@ -435,3 +448,70 @@ Every model forbids unknown keys and every field is described; every model reads
 | `stamps` | `list[AwareDatetime]` | required | The record times as datetimes, for evaluating the cycles. |
 
 `totals.yaml` is `Totals`: `categories.<name>.file` and `categories.<name>.variables.<var>.units` / `.records[record][level]` (one level for 2-D fields), the sum of field times cell area.
+
+## 9. Driver skeleton: MET and CATChem on the cubed-sphere grid (task 3)
+
+`protos/met_catchem/` is the first prototype: a NUOPC driver (`esmApp`) running the analytic meteorology provider `MET` and CATChem's cap (`cc_nuopc` from the image) under one run sequence on the task-2 mosaic grid. Sources: `esmApp.F90` (program: dictionary, driver create/run, summary line), `proto_driver.F90` (`NUOPC_Driver`: config, clock, grid, PET rule, children, `runSeq::`), `proto_met.F90` (the `NUOPC_Model` provider), `proto_met_analytic.F90` (the closed-form fields), `proto_manifest.F90` (the `ESMF_HConfig` reader of `manifest.yaml`). CATChem is linked from the image's build tree by `cmake/catchem_build_tree.cmake` (`CATCHEM_ROOT`, the thirteen archives in one linker group plus ESMF and the MPI Fortran, C and C++ bindings; `libcc_nuopc.a` alone holds only the nine driver objects).
+
+### Build and run
+
+Inside the image (`tools/ci.sh ctest` does all of it in the local daemon; `tools/ci.sh test ci` does it on the cloud builder's amd64 node, which is the way on Apple silicon):
+
+```bash
+docker compose run --rm ci sh -c 'uv sync --frozen && cmake -S . -B build && cmake --build build && ctest --test-dir build --output-on-failure -L ci'
+```
+
+By hand, from the build tree (the configs are rendered there with absolute paths; `esmApp` takes the config path as its only argument, default `./esm.configure`):
+
+```bash
+docker compose run --rm ci sh -c 'cd build/protos/met_catchem/run_C48_np6 && mpirun -np 6 ../esmApp ../esm.C48.configure'
+```
+
+```bash
+docker compose run --rm ci sh -c 'cd build/protos/met_catchem/run_C96_np12 && mpirun -np 12 ../esmApp ../esm.C96.configure'
+```
+
+`esmApp --dump-manifest data/C48/manifest.yaml` prints every manifest value the components read. On success PET 0 prints `met_catchem: completed 120 steps to 2021-03-23T06:00:00` (the CTest pass criterion); on failure the message and `ESMF_END_ABORT`, with the detail in `PET*.ESMF_LogFile` in the run directory. The driver logs the tile count, the per-tile decomposition and the one-DE-per-PET check; MET logs the advertised and realized counts, every export's `ShareStatusField`/`ShareStatusGeomObject` (DataInitialize) and a line every ten steps (surface temperature, pressure and the sea-salt maximum of the local DE).
+
+| Config key | Meaning |
+| --- | --- |
+| `EARTH_component_list: MET CATCHEM` | the children, added in this order (CATChem's Advertise runs first) |
+| `<PFX>_petlist_bounds: lo hi` | PET range, `-1 -1` = all PETs; `<PFX>_attributes::` is ingested as NUOPC attributes (`Verbosity = high`) |
+| `manifest:` | the task-2 `data/<res>/manifest.yaml`; `data_root:` is the directory its relative paths are relative to (where `make_mock_data` ran) |
+| `field_dictionary:` | `configs/prescribed/met_catchem/fd_protos.yaml`, loaded with `NUOPC_FieldDictionarySetup` before the driver exists |
+| `catchem_config_file:` | the science config (`configs/prescribed/met_catchem/CATChem_new_config.yml`; `_nodiag.yml` for the `local` variant); `catchem_field_mapping_file:` the submodule's `CATChem_field_mapping.yml` |
+| `grid_source: mosaic` | `ESMF_GridCreateMosaic` from the fix files (`tileFilePath` = the fix directory); `analytic` = `ESMF_GridCreateCubedSphere` (debug mode, see below) |
+| `regdecomp_per_tile: nx ny` | optional; product must equal PET count / 6; default `1 petCount/6` (192 PETs: `4 8`, the `catchem_control` layout) |
+| `runSeq::` | `@720 / MET / MET -> CATCHEM / CATCHEM / CATCHEM -> MET / @`, the step from `tools/defaults/manifest.yaml` at configure time |
+
+PET counts must be multiples of 6 (one DE per PET on six tiles); otherwise `met_catchem: PET count N must be a multiple of 6 (one DE per PET on six tiles)` and an abort. The CATChem cap's own check only logs, which is why the driver enforces it.
+
+### What runs
+
+- **MET** advertises the 43 imports of the mapping (every entry that is not optional or has `advertise: true`) as exports with `"will provide"`, `SharePolicyField="share"`, `SharePolicyGeomObject="share"`, and CATChem's five exports as its own imports (NUOPC never prunes a model's unconnected exports and the cap needs them realized); every field is reference-shared (`43 of 43 exports are reference-shared`). Shapes: 2-D at centre; 3-D with nz, nz+1 (`vertical_axis: interface`) or `met.n_soil_layers` (`soil_layer`) ungridded levels, k = 1 at the surface; the rank-4 tracer field `(nz, ntracers)` with the Array-Info keys `tracerNames`/`tracerUnits` from `met.tracers`. Fields are recomputed in DataInitialize and every Advance from the manifest's `met` parameters, the grid centre coordinates and `ESMF_FieldRegridGetArea` (cell areas in square radians, scaled by the manifest's Earth radius squared; the global sum over 4πR² is logged as a check of the grid's corners): a quadratic-sigma column (`pressure_top_pa`), a lapse-rate temperature profile, hypsometric geopotential **in m² s⁻²** (the cap divides by g0), a cos² jet, a cloud profile, `sphum` decaying as σ²; surface temperature with a diurnal cycle in local solar time, orography from the land fraction, shortwave and heat fluxes from the solar zenith angle; land/ocean/ice/snow/vegetation/soil fields from the manifest's super-Gaussian continents (the task-2 formula in Fortran); roughness **in cm** (the cap multiplies by 0.01). The tracer export persists CATChem's previous-step chemistry (copied back from the import side) and recomputes `sphum`. Exports are stamped at step start (`label_TimestampExport` override) and MET's `label_CheckImport` is a no-op (CATChem stamps its exports at step end and never marks them `Updated` at initialization).
+- **CATChem** runs `configs/prescribed/met_catchem/CATChem_new_config.yml`: the submodule's `CATChem_species.yml` by a path relative to the config (the cap resolves relative paths against the config's directory), sea salt (`geos12`) as the only process, `extemis: activate: false` (the Fortran reader defaults it to true when absent), aqmio diagnostics hourly into `<run dir>/catchem_diag/` (`diag_list`: the five sea-salt bins; aqmio writes one file per tile, `catchem_YYYYMMDD_HHMMSS.tileN.nc`, so a 24 h run leaves 144 files). The cap maps `sphum` as host-owned (QV) and the sea-salt bins as chemical tracers.
+- **Manifest additions** (`MetParams`, `tools/defaults/manifest.yaml`, digest pin updated): `n_soil_layers`, `pressure_top_pa`, `orography_max_m`, `specific_humidity_surface`, `cloud_fraction_max`, `friction_velocity_{land,ocean}_m_s`, `roughness_length_{land,ocean}_cm`, `shortwave_peak_w_m2`, `sensible_heat_peak_w_m2`, `latent_heat_peak_w_m2`, `aerodynamic_conductance_s_m`, `canopy_resistance_s_m`, `leaf_area_index`, `vegetation_fraction`, `sea_ice_latitude_deg`, `snow_latitude_deg`, `soil_type_class`, `tracers` (`name`, `units`; `sphum` exactly once, names unique). A manifest written before task 3 lacks them and fails the Fortran reader by key name; regenerate with `make_mock_data` (the CTest fixture does).
+
+### Tests
+
+| Test | Label | What |
+| --- | --- | --- |
+| `met_catchem_manifest_dump` | `ci` | `esmApp --dump-manifest` on `data/C48/manifest.yaml`, expects `clock.n_levels=127` |
+| `proto_met_catchem_bad_petcount` | `ci` | 4 PETs, expects the PET-rule message |
+| `proto_met_catchem`, `proto_met_catchem_np12` | `ci` | C48, 6 and 12 PETs, 24 h in 120 steps, mosaic grid, diagnostics on; run directories `build/protos/met_catchem/run_C48_np{6,12}/` |
+| `proto_met_catchem_c96` | `c96` | C96, 12 PETs, `FIXTURES_REQUIRED mockdata_c96`; by hand only |
+| `proto_met_catchem_local` | `local` | C48, 6 PETs, `esm.C48.local.configure`: `grid_source: analytic` and `CATChem_new_config_nodiag.yml`, nothing read from or written to disk; never run by CI |
+
+### Measured (2026-10-27)
+
+The local-daemon rows ran under Rosetta emulation on this Mac; the first row ran natively on the cloud builder.
+
+| Run | Result |
+| --- | --- |
+| `tools/ci.sh test ci` (the `test` stage on the cloud builder's amd64 node, native; three runs) | all 7 `ci` tests pass every time: `proto_met_catchem` 28.4-28.8 s, `proto_met_catchem_np12` 18.5-19.1 s, `make_mock_data` 6-7 s (fix files from the cache mount), the rest about a second; `ctest` total about 56 s. Mosaic grid `tileCount=6`, `regDecompPTile` 1x1 and 1x2, 43 of 43 exports reference-shared on every PET, global cell area / 4πR² = 1.0000, 144 aqmio diagnostic files per run |
+| `proto_met_catchem_local` (C48, 6 PETs, analytic grid, no diagnostics) | 120 steps in 14 s wall; 43 of 43 exports shared; sea-salt bin 1 maximum grows from 0 to 1.1e-1 ug/kg over the day |
+| the same config on 12 PETs | 120 steps in 14 s wall, `regDecompPTile=1x2` |
+| C96 analytic, 12 PETs (`esm.C96.configure` edited to `grid_source: analytic` and the `_nodiag` science config) | 120 steps in 41 s wall, local DE 96x48 |
+| `proto_met_catchem`, `proto_met_catchem_np12`, `proto_met_catchem_c96` in the local daemon on this Mac (Rosetta) | **not runnable**: `ESMF_GridCreateMosaic` opens the mosaic with netCDF and HDF5's initialization executes x87 `ffreep`, which Rosetta does not emulate (`SIGILL`, section 7); hence `tools/ci.sh test`. |
+
+Link check (task 3): `nm -C build/protos/met_catchem/esmApp` shows 990 `catchem_yaml::` and 770 `YAML::` symbols, CATChem's vendored yaml-cpp and ESMF's embedded one in different namespaces, so the long-standing yaml-cpp reminder is closed for CATChem.

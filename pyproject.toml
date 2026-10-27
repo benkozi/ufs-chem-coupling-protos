@@ -19,6 +19,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "codespell>=2.4",
+    "fprettify>=0.3.7",
     "mypy>=1.14",
     "pre-commit>=4.0",
     "pytest>=8.0",
@@ -69,6 +70,8 @@ exclude_also = [
 # Spelling (pre-commit, whole tree). design/ holds records; extern/ holds the submodules, which have their own hooks.
 [tool.codespell]
 skip = "./design,./extern,./build,./coverage-html,./uv.lock,./.venv,./.git,./.mypy_cache,./.ruff_cache,./.pytest_cache,*.nc"
+# Fortran keywords are not typos.
+ignore-words-list = "inout"
 
 # Dead-code detection (pre-commit, whole tree). Names bound by frameworks rather than by code are ignored.
 [tool.vulture]
@@ -92,6 +95,27 @@ ignore_names = [
     "land_use_class",
     "diurnal_amplitude_k",
     "diurnal_peak_local_hour",
+    "n_soil_layers",
+    "pressure_top_pa",
+    "orography_max_m",
+    "specific_humidity_surface",
+    "cloud_fraction_max",
+    "friction_velocity_land_m_s",
+    "friction_velocity_ocean_m_s",
+    "roughness_length_land_cm",
+    "roughness_length_ocean_cm",
+    "shortwave_peak_w_m2",
+    "sensible_heat_peak_w_m2",
+    "latent_heat_peak_w_m2",
+    "aerodynamic_conductance_s_m",
+    "canopy_resistance_s_m",
+    "leaf_area_index",
+    "vegetation_fraction",
+    "sea_ice_latitude_deg",
+    "snow_latitude_deg",
+    "soil_type_class",
+    "tracers",
+    "units",
     # VariableEncoding / FileAttributes fields are consumed through model_dump (netCDF encodings and attributes).
     "zlib",
     "complevel",

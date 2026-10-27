@@ -296,8 +296,19 @@ class Category(Strict):
         return self
 
 
+class Tracer(Strict):
+    name: str = Field(
+        description="Host tracer name written to the tracerNames metadata of the rank-4 tracer field; CATChem matches it case-insensitively against its species.",
+        min_length=1,
+    )
+    units: str = Field(
+        description="Units string written to tracerUnits (kg/kg for sphum, ug/kg for aerosols, ppm for gases); CATChem derives its conversion factor from it.",
+        min_length=1,
+    )
+
+
 class MetParams(Strict):
-    """Parameters of the analytic meteorology task 3's MET component computes at run time (nothing is written to disk)."""
+    """Parameters of the analytic meteorology the MET component (protos/met_catchem/proto_met.F90) computes at run time; nothing is written to disk."""
 
     surface_pressure_pa: float = Field(
         description="Mean sea-level pressure used for the surface pressure field, Pa.",
@@ -333,6 +344,90 @@ class MetParams(Strict):
     diurnal_peak_local_hour: float = Field(
         description="Local solar hour of the temperature maximum.", ge=0, lt=24
     )
+    n_soil_layers: int = Field(
+        description="Number of soil layers of the soil moisture and soil temperature fields (Noah: 4).",
+        gt=0,
+    )
+    pressure_top_pa: float = Field(
+        description="Pressure at the model top, Pa; the column is quadratic in sigma between it and the surface pressure.",
+        gt=0,
+    )
+    orography_max_m: float = Field(
+        description="Peak surface height of the analytic orography (land fraction times cos^2 latitude), m.",
+        ge=0,
+    )
+    specific_humidity_surface: float = Field(
+        description="Specific humidity at the surface, kg/kg; decays as sigma^2 with height and sets sphum and QV2M.",
+        ge=0,
+        lt=1,
+    )
+    cloud_fraction_max: float = Field(
+        description="Peak of the analytic cloud fraction profile, 0-1.", ge=0, le=1
+    )
+    friction_velocity_land_m_s: float = Field(
+        description="Friction velocity over land, m/s.", ge=0
+    )
+    friction_velocity_ocean_m_s: float = Field(
+        description="Friction velocity over ocean, m/s.", ge=0
+    )
+    roughness_length_land_cm: float = Field(
+        description="Surface roughness length over land, cm (the CATChem cap multiplies inst_surface_roughness by 0.01).",
+        gt=0,
+    )
+    roughness_length_ocean_cm: float = Field(
+        description="Surface roughness length over ocean, cm.", gt=0
+    )
+    shortwave_peak_w_m2: float = Field(
+        description="Downward shortwave flux at the surface for an overhead sun, W/m2; scaled by the cosine of the solar zenith angle.",
+        ge=0,
+    )
+    sensible_heat_peak_w_m2: float = Field(
+        description="Sensible heat flux over land for an overhead sun, W/m2.", ge=0
+    )
+    latent_heat_peak_w_m2: float = Field(
+        description="Latent heat flux for an overhead sun, W/m2.", ge=0
+    )
+    aerodynamic_conductance_s_m: float = Field(
+        description="Aerodynamic conductance exported as inst_aerodynamic_conductance, s/m.",
+        gt=0,
+    )
+    canopy_resistance_s_m: float = Field(
+        description="Canopy resistance exported as inst_canopy_resistance, s/m.", gt=0
+    )
+    leaf_area_index: float = Field(
+        description="Leaf area index over land, m2/m2.", ge=0
+    )
+    vegetation_fraction: float = Field(
+        description="Green vegetation fraction over land, 0-1.", ge=0, le=1
+    )
+    sea_ice_latitude_deg: float = Field(
+        description="Ocean cells poleward of this latitude (degrees) are fully sea-ice covered.",
+        ge=0,
+        le=90,
+    )
+    snow_latitude_deg: float = Field(
+        description="Land cells poleward of this latitude (degrees) are fully snow covered.",
+        ge=0,
+        le=90,
+    )
+    soil_type_class: int = Field(
+        description="Soil type class index reported over land cells.", ge=0
+    )
+    tracers: list[Tracer] = Field(
+        description="The host tracers of the rank-4 inst_tracer_mass_frac field, in slot order; sphum must be present exactly once.",
+        min_length=1,
+    )
+
+    @model_validator(mode="after")
+    def _tracers_and_column_are_consistent(self) -> MetParams:
+        names = [t.name.lower() for t in self.tracers]
+        if len(set(names)) != len(names):
+            raise ValueError("tracer names must be unique (case-insensitive)")
+        if names.count("sphum") != 1:
+            raise ValueError("tracers must contain sphum exactly once")
+        if self.pressure_top_pa >= self.surface_pressure_pa:
+            raise ValueError("pressure_top_pa must be below surface_pressure_pa")
+        return self
 
 
 class Parameters(Strict):

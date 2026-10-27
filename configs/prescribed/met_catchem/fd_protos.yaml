@@ -1,0 +1,109 @@
+# NUOPC field dictionary of the met_catchem prototype: every import of extern/CATChem/drivers/nuopc/
+# CATChem_field_mapping.yml, CATChem's five exports, and the one alias the UFS-pinned CATChem needs. Loaded by
+# esmApp with NUOPC_FieldDictionarySetup before the driver exists. Canonical units are CF strings (ufs-weather-
+# model's fd_ufs.yaml where it has a value); no component passes Units at advertise, so they are not compared
+# with anything at run time. Task 5's generator extends a copy of this file with the emission field names.
+field_dictionary:
+  version_number: 0.1
+  institution: ufs-chem-coupling-protos
+  description: met_catchem prototype
+  entries:
+    # 3-D, levels (k = 1 at the surface)
+    - standard_name: inst_temp_levels
+      canonical_units: K
+    - standard_name: inst_geop_interface
+      canonical_units: m2 s-2
+    - standard_name: inst_geop_levels
+      canonical_units: m2 s-2
+    - standard_name: inst_pres_interface
+      canonical_units: Pa
+    - standard_name: inst_pres_levels
+      canonical_units: Pa
+    - standard_name: inst_zonal_wind_levels
+      canonical_units: m s-1
+    - standard_name: inst_merid_wind_levels
+      canonical_units: m s-1
+    - standard_name: inst_cloud_frac_levels
+      canonical_units: '1'
+    - standard_name: inst_ice_nonconv_tendency_levels
+      canonical_units: kg m-2 s-1
+    - standard_name: inst_liq_nonconv_tendency_levels
+      canonical_units: kg m-2 s-1
+    - standard_name: inst_soil_moisture_content
+      canonical_units: m3 m-3
+    - standard_name: temperature_of_soil_layer
+      canonical_units: K
+    # 2-D surface
+    - standard_name: inst_rainfall_amount
+      canonical_units: m
+    - standard_name: inst_convective_rainfall_amount
+      canonical_units: m
+    - standard_name: inst_zonal_wind_height10m
+      canonical_units: m s-1
+    - standard_name: inst_merid_wind_height10m
+      canonical_units: m s-1
+    - standard_name: inst_friction_velocity
+      canonical_units: m s-1
+    - standard_name: inst_land_sea_mask
+      canonical_units: '1'
+    - standard_name: inst_temp_height_surface
+      canonical_units: K
+    - standard_name: inst_pres_height_surface
+      canonical_units: Pa
+    - standard_name: inst_temp_height2m
+      canonical_units: K
+    - standard_name: inst_spec_humid_height2m
+      canonical_units: kg kg-1
+    - standard_name: inst_sensi_heat_flx
+      canonical_units: W m-2
+    - standard_name: inst_up_sensi_heat_flx
+      canonical_units: W m-2
+    - standard_name: inst_laten_heat_flx
+      canonical_units: W m-2
+    - standard_name: inst_net_sw_flx
+      canonical_units: W m-2
+    - standard_name: inst_aerodynamic_conductance
+      canonical_units: s m-1
+    - standard_name: inst_surface_roughness
+      canonical_units: cm
+    - standard_name: inst_pbl_height
+      canonical_units: m
+    - standard_name: height
+      canonical_units: m
+    - standard_name: canopy_moisture_storage
+      canonical_units: m3
+    - standard_name: inst_canopy_resistance
+      canonical_units: s m-1
+    - standard_name: surface_cell_area
+      canonical_units: m2
+    - standard_name: surface_snow_area_fraction
+      canonical_units: '1'
+    - standard_name: ice_fraction_in_atm
+      canonical_units: '1'
+      alias: sea_ice_area_fraction
+    - standard_name: leaf_area_index
+      canonical_units: '1'
+    - standard_name: inst_vegetation_area_frac
+      canonical_units: '1'
+    - standard_name: ocean_fraction
+      canonical_units: '1'
+    - standard_name: vegetation_type
+      canonical_units: '1'
+    - standard_name: lake_fraction
+      canonical_units: '1'
+    - standard_name: inst_surface_soil_wetness
+      canonical_units: '1'
+    - standard_name: soil_type
+      canonical_units: '1'
+    # rank 4 (levels x tracers), both directions
+    - standard_name: inst_tracer_mass_frac
+      canonical_units: '1'
+    # CATChem exports
+    - standard_name: inst_tracer_diag_aod
+      canonical_units: '1'
+    - standard_name: inst_tracer_diag_coszens
+      canonical_units: '1'
+    - standard_name: inst_tracer_diag_jo3o1d
+      canonical_units: min-1
+    - standard_name: inst_tracer_diag_jno2
+      canonical_units: min-1
