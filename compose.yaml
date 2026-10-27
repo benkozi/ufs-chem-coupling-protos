@@ -6,6 +6,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      # The test stage follows final in the Dockerfile; the image people run is final.
+      target: final
     image: ufs-chem-coupling-protos:dev
     platform: linux/amd64
     volumes:

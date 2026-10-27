@@ -25,5 +25,9 @@ message(STATUS "MPIEXEC_PREFLAGS: ${MPIEXEC_PREFLAGS}")
 find_package(ESMF REQUIRED)
 message(STATUS "ESMF ${ESMF_VERSION} from ${ESMFMKFILE}")
 
+# CATChem (cc_nuopc and its archive closure) from the image's build tree; defines CATChem::cc_nuopc.
+include(catchem_build_tree)
+
 add_subdirectory(tests/smoke)
 add_subdirectory(tests/mockdata)
+add_subdirectory(protos/met_catchem)

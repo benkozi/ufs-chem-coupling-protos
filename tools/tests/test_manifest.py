@@ -155,12 +155,51 @@ def test_c96_paths(tmp_path: Path) -> None:
     assert m.fix.source_url == get_settings().fix_url.format(resolution="C96")
 
 
+# --- the met section (task 3) ----------------------------------------------------------------------------------
+
+
+def test_met_params_carry_what_the_met_component_reads(tmp_path: Path) -> None:
+    met = make(tmp_path).met
+    assert met.n_soil_layers == 4
+    assert met.pressure_top_pa < met.surface_pressure_pa
+    assert met.roughness_length_ocean_cm < met.roughness_length_land_cm
+    names = [t.name for t in met.tracers]
+    assert names[0] == "sphum"
+    assert names[1:] == ["seas1", "seas2", "seas3", "seas4", "seas5"]
+    assert all(t.units for t in met.tracers)
+    assert {t.units for t in met.tracers} == {"kg/kg", "ug/kg"}
+
+
+def test_tracers_need_sphum_exactly_once_and_unique_names(tmp_path: Path) -> None:
+    doc = make(tmp_path).met.model_dump(mode="json")
+    doc["tracers"] = [{"name": "seas1", "units": "ug/kg"}]
+    with pytest.raises(pydantic.ValidationError, match="sphum"):
+        mf.MetParams.model_validate(doc)
+    doc["tracers"] = [
+        {"name": "sphum", "units": "kg/kg"},
+        {"name": "SPHUM", "units": "kg/kg"},
+    ]
+    with pytest.raises(pydantic.ValidationError, match="unique"):
+        mf.MetParams.model_validate(doc)
+    doc["tracers"] = []
+    with pytest.raises(pydantic.ValidationError, match="tracers"):
+        mf.MetParams.model_validate(doc)
+
+
+def test_pressure_top_must_be_below_the_surface_pressure(tmp_path: Path) -> None:
+    doc = make(tmp_path).met.model_dump(mode="json")
+    doc["pressure_top_pa"] = doc["surface_pressure_pa"]
+    with pytest.raises(pydantic.ValidationError, match="pressure_top_pa"):
+        mf.MetParams.model_validate(doc)
+
+
 # --- the defaults file -------------------------------------------------------------------------------------
 
-# sha256 of the canonical JSON dump of ManifestDefaults from tools/defaults/manifest.yaml. It equals the
-# defaults reviewed in the PR's first commit (51f1cea, Python literals) except for four amplitudes whose
-# computed values (2e-11 * 1.25 and the like) were rounded to the intended literals (one ULP, 1.3e-16 relative).
-DEFAULTS_DIGEST = "4a9c04487f21475f05961112ed0b351d664d30d0ea0bc11ae0deae24af47a93c"
+# sha256 of the canonical JSON dump of ManifestDefaults from tools/defaults/manifest.yaml. Task 2's value
+# (4a9c0448…) equalled the defaults reviewed in PR #4's first commit (51f1cea, Python literals) except for four
+# amplitudes rounded to their intended literals; task 3 added the twenty `met` parameters the MET component
+# reads (soil layers, column, surface, geography, tracers), which is the only change since.
+DEFAULTS_DIGEST = "674d5348184a14f8fe6cb335a280fafba5334392fd4d34faa1032d806441624e"
 
 
 def test_checked_in_defaults_validate_and_are_pinned() -> None:

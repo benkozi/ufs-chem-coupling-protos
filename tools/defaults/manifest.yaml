@@ -493,3 +493,35 @@ met:
   land_use_class: 1
   diurnal_amplitude_k: 5.0
   diurnal_peak_local_hour: 14.0
+  n_soil_layers: 4
+  pressure_top_pa: 100.0
+  orography_max_m: 1500.0
+  specific_humidity_surface: 0.01
+  cloud_fraction_max: 0.4
+  friction_velocity_land_m_s: 0.3
+  friction_velocity_ocean_m_s: 0.2
+  roughness_length_land_cm: 10.0
+  roughness_length_ocean_cm: 0.01
+  shortwave_peak_w_m2: 900.0
+  sensible_heat_peak_w_m2: 100.0
+  latent_heat_peak_w_m2: 80.0
+  aerodynamic_conductance_s_m: 0.01
+  canopy_resistance_s_m: 100.0
+  leaf_area_index: 2.0
+  vegetation_fraction: 0.6
+  sea_ice_latitude_deg: 70.0
+  snow_latitude_deg: 65.0
+  soil_type_class: 1
+  tracers:
+    - name: sphum
+      units: kg/kg
+    - name: seas1
+      units: ug/kg
+    - name: seas2
+      units: ug/kg
+    - name: seas3
+      units: ug/kg
+    - name: seas4
+      units: ug/kg
+    - name: seas5
+      units: ug/kg

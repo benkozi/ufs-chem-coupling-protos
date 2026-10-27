@@ -227,3 +227,6 @@ data/
 
 # NetCDF data is never committed: fix files and fixtures are downloaded on demand into data/ (ignored above).
 *.nc
+
+# By-hand prototype runs (PET logs, CATChem diagnostics); CTest runs live under build/.
+run/
