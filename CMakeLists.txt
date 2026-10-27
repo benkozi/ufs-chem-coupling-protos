@@ -26,3 +26,4 @@ find_package(ESMF REQUIRED)
 message(STATUS "ESMF ${ESMF_VERSION} from ${ESMFMKFILE}")
 
 add_subdirectory(tests/smoke)
+add_subdirectory(tests/mockdata)

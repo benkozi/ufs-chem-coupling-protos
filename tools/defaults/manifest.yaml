@@ -1,0 +1,495 @@
+# Default parameter set of the mock data step: the manifest minus generator, resolution and fix files.
+# Parsed by tools.manifest.ManifestDefaults; paths are relative to --out. Edit here, not in Python.
+# Keep CATChem's `NO` quoted: an unquoted NO is boolean false in YAML 1.1.
+earth_radius_m: 6371000.0
+clock:
+  start: '2021-03-22T06:00:00Z'
+  duration_hours: 24
+  step_seconds: 720
+  n_levels: 127
+grids:
+  inventory:
+    dlon: 1.0
+    dlat: 1.0
+    lon_first: -179.5
+    lat_first: -89.5
+    nlon: 360
+    nlat: 180
+  gmi:
+    dlon: 2.5
+    dlat: 2.0
+    lon_first: -178.75
+    lat_first: -89.0
+    nlon: 144
+    nlat: 90
+land_mask:
+  grid: inventory
+  file: inventories/landmask.nc
+  threshold: 0.5
+  continents:
+    - lon: 40.0
+      lat: 25.0
+      semi_axis_lon: 70.0
+      semi_axis_lat: 40.0
+      rotation_deg: 10.0
+      exponent: 4.0
+    - lon: -80.0
+      lat: 5.0
+      semi_axis_lon: 30.0
+      semi_axis_lat: 60.0
+      rotation_deg: -20.0
+      exponent: 4.0
+    - lon: 135.0
+      lat: -25.0
+      semi_axis_lon: 18.0
+      semi_axis_lat: 12.0
+      rotation_deg: 0.0
+      exponent: 4.0
+categories:
+  anthro:
+    file: inventories/anthro.nc
+    cadence: hourly
+    regrid_method: conserve
+    cece_mapalgo: consd
+    grid: inventory
+    is_3d: false
+    level_order: bottom_up
+    masked_by: land
+    variables:
+      'NO':
+        units: kg m-2 s-1
+        long_name: Nitrogen oxide emission flux
+        background: 0.0
+        sources:
+          - lon: 15.0
+            lat: 48.0
+            sigma_deg: 12.0
+            amplitude: 2.0e-10
+          - lon: -80.0
+            lat: 40.0
+            sigma_deg: 15.0
+            amplitude: 2.5e-10
+          - lon: 115.0
+            lat: 32.0
+            sigma_deg: 18.0
+            amplitude: 3.0e-10
+        diurnal:
+          relative_amplitude: 0.5
+          peak_local_hour: 14.0
+        seasonal:
+        vertical:
+      SO2:
+        units: kg m-2 s-1
+        long_name: Sulfur dioxide emission flux
+        background: 0.0
+        sources:
+          - lon: 15.0
+            lat: 48.0
+            sigma_deg: 12.0
+            amplitude: 1.5e-10
+          - lon: -80.0
+            lat: 40.0
+            sigma_deg: 15.0
+            amplitude: 1.875e-10
+          - lon: 115.0
+            lat: 32.0
+            sigma_deg: 18.0
+            amplitude: 2.25e-10
+        diurnal:
+          relative_amplitude: 0.5
+          peak_local_hour: 14.0
+        seasonal:
+        vertical:
+      POC:
+        units: kg m-2 s-1
+        long_name: Primary organic carbon emission flux
+        background: 0.0
+        sources:
+          - lon: 15.0
+            lat: 48.0
+            sigma_deg: 12.0
+            amplitude: 4.0e-11
+          - lon: -80.0
+            lat: 40.0
+            sigma_deg: 15.0
+            amplitude: 5.0e-11
+          - lon: 115.0
+            lat: 32.0
+            sigma_deg: 18.0
+            amplitude: 6.0e-11
+        diurnal:
+          relative_amplitude: 0.5
+          peak_local_hour: 14.0
+        seasonal:
+        vertical:
+      TERP:
+        units: kg m-2 s-1
+        long_name: Terpene emission flux
+        background: 0.0
+        sources:
+          - lon: 15.0
+            lat: 48.0
+            sigma_deg: 12.0
+            amplitude: 3.0e-11
+          - lon: -80.0
+            lat: 40.0
+            sigma_deg: 15.0
+            amplitude: 3.75e-11
+          - lon: 115.0
+            lat: 32.0
+            sigma_deg: 18.0
+            amplitude: 4.5e-11
+        diurnal:
+          relative_amplitude: 0.5
+          peak_local_hour: 14.0
+        seasonal:
+        vertical:
+      ISOP:
+        units: kg m-2 s-1
+        long_name: Isoprene emission flux
+        background: 0.0
+        sources:
+          - lon: 15.0
+            lat: 48.0
+            sigma_deg: 12.0
+            amplitude: 5.0e-11
+          - lon: -80.0
+            lat: 40.0
+            sigma_deg: 15.0
+            amplitude: 6.25e-11
+          - lon: 115.0
+            lat: 32.0
+            sigma_deg: 18.0
+            amplitude: 7.5e-11
+        diurnal:
+          relative_amplitude: 0.5
+          peak_local_hour: 14.0
+        seasonal:
+        vertical:
+      PEC:
+        units: kg m-2 s-1
+        long_name: Primary elemental carbon emission flux
+        background: 0.0
+        sources:
+          - lon: 15.0
+            lat: 48.0
+            sigma_deg: 12.0
+            amplitude: 2.0e-11
+          - lon: -80.0
+            lat: 40.0
+            sigma_deg: 15.0
+            amplitude: 2.5e-11
+          - lon: 115.0
+            lat: 32.0
+            sigma_deg: 18.0
+            amplitude: 3.0e-11
+        diurnal:
+          relative_amplitude: 0.5
+          peak_local_hour: 14.0
+        seasonal:
+        vertical:
+      PSO4:
+        units: kg m-2 s-1
+        long_name: Primary sulfate emission flux
+        background: 0.0
+        sources:
+          - lon: 15.0
+            lat: 48.0
+            sigma_deg: 12.0
+            amplitude: 1.0e-11
+          - lon: -80.0
+            lat: 40.0
+            sigma_deg: 15.0
+            amplitude: 1.25e-11
+          - lon: 115.0
+            lat: 32.0
+            sigma_deg: 18.0
+            amplitude: 1.5e-11
+        diurnal:
+          relative_amplitude: 0.5
+          peak_local_hour: 14.0
+        seasonal:
+        vertical:
+  fire:
+    file: inventories/fire.nc
+    cadence: hourly
+    regrid_method: conserve
+    cece_mapalgo: consd
+    grid: inventory
+    is_3d: false
+    level_order: bottom_up
+    masked_by: land
+    variables:
+      'NO':
+        units: kg m-2 s-1
+        long_name: Fire nitrogen oxide emission flux
+        background: 0.0
+        sources:
+          - lon: 25.0
+            lat: -5.0
+            sigma_deg: 12.0
+            amplitude: 1.0e-10
+          - lon: -60.0
+            lat: -10.0
+            sigma_deg: 15.0
+            amplitude: 1.25e-10
+          - lon: 135.0
+            lat: -20.0
+            sigma_deg: 18.0
+            amplitude: 1.5e-10
+        diurnal:
+          relative_amplitude: 0.8
+          peak_local_hour: 15.0
+        seasonal:
+        vertical:
+      SO2:
+        units: kg m-2 s-1
+        long_name: Fire sulfur dioxide emission flux
+        background: 0.0
+        sources:
+          - lon: 25.0
+            lat: -5.0
+            sigma_deg: 12.0
+            amplitude: 3.0e-11
+          - lon: -60.0
+            lat: -10.0
+            sigma_deg: 15.0
+            amplitude: 3.75e-11
+          - lon: 135.0
+            lat: -20.0
+            sigma_deg: 18.0
+            amplitude: 4.5e-11
+        diurnal:
+          relative_amplitude: 0.8
+          peak_local_hour: 15.0
+        seasonal:
+        vertical:
+      CO:
+        units: kg m-2 s-1
+        long_name: Fire carbon monoxide emission flux
+        background: 0.0
+        sources:
+          - lon: 25.0
+            lat: -5.0
+            sigma_deg: 12.0
+            amplitude: 2.0e-09
+          - lon: -60.0
+            lat: -10.0
+            sigma_deg: 15.0
+            amplitude: 2.5e-09
+          - lon: 135.0
+            lat: -20.0
+            sigma_deg: 18.0
+            amplitude: 3.0e-09
+        diurnal:
+          relative_amplitude: 0.8
+          peak_local_hour: 15.0
+        seasonal:
+        vertical:
+      FRP:
+        units: MW
+        long_name: Fire radiative power
+        background: 0.0
+        sources:
+          - lon: 25.0
+            lat: -5.0
+            sigma_deg: 10.0
+            amplitude: 50.0
+          - lon: -60.0
+            lat: -10.0
+            sigma_deg: 10.0
+            amplitude: 50.0
+          - lon: 135.0
+            lat: -20.0
+            sigma_deg: 10.0
+            amplitude: 50.0
+        diurnal:
+          relative_amplitude: 0.8
+          peak_local_hour: 15.0
+        seasonal:
+        vertical:
+  gmi:
+    file: inventories/gmi.nc
+    cadence: monthly
+    regrid_method: bilinear
+    cece_mapalgo: bilinear
+    grid: gmi
+    is_3d: true
+    level_order: bottom_up
+    masked_by: none
+    variables:
+      oh:
+        units: cm-3
+        long_name: Hydroxyl radical number concentration
+        background: 500000.0
+        sources:
+          - lon: 0.0
+            lat: 0.0
+            sigma_deg: 30.0
+            amplitude: 2000000.0
+        diurnal:
+        seasonal:
+          relative_amplitude: 0.3
+          peak_month: 7
+        vertical:
+          scale_height_levels: 25.0
+      h2o2:
+        units: mol mol-1
+        long_name: Hydrogen peroxide volume mixing ratio
+        background: 2.0e-10
+        sources:
+          - lon: 0.0
+            lat: 10.0
+            sigma_deg: 35.0
+            amplitude: 1.5e-09
+        diurnal:
+        seasonal:
+          relative_amplitude: 0.3
+          peak_month: 7
+        vertical:
+          scale_height_levels: 25.0
+      no3:
+        units: mol mol-1
+        long_name: Nitrate radical volume mixing ratio
+        background: 1.0e-12
+        sources:
+          - lon: 20.0
+            lat: 40.0
+            sigma_deg: 25.0
+            amplitude: 2.0e-11
+        diurnal:
+        seasonal:
+          relative_amplitude: 0.2
+          peak_month: 1
+        vertical:
+          scale_height_levels: 25.0
+  dms:
+    file: inventories/dms.nc
+    cadence: monthly
+    regrid_method: bilinear
+    cece_mapalgo: bilinear
+    grid: inventory
+    is_3d: false
+    level_order: bottom_up
+    masked_by: ocean
+    variables:
+      dms:
+        units: nmol L-1
+        long_name: Sea surface dimethyl sulfide concentration
+        background: 1.5
+        sources:
+          - lon: -30.0
+            lat: 50.0
+            sigma_deg: 20.0
+            amplitude: 4.0
+          - lon: 160.0
+            lat: -45.0
+            sigma_deg: 25.0
+            amplitude: 3.0
+        diurnal:
+        seasonal:
+          relative_amplitude: 0.3
+          peak_month: 7
+        vertical:
+  dust:
+    file: inventories/dust.nc
+    cadence: static
+    regrid_method: bilinear
+    cece_mapalgo: bilinear
+    grid: inventory
+    is_3d: false
+    level_order: bottom_up
+    masked_by: land
+    variables:
+      clayfrac:
+        units: '1'
+        long_name: Clay fraction
+        background: 0.15
+        sources:
+          - lon: 10.0
+            lat: 22.0
+            sigma_deg: 15.0
+            amplitude: 0.25
+        diurnal:
+        seasonal:
+        vertical:
+      sandfrac:
+        units: '1'
+        long_name: Sand fraction
+        background: 0.3
+        sources:
+          - lon: 10.0
+            lat: 22.0
+            sigma_deg: 15.0
+            amplitude: 0.45
+          - lon: 45.0
+            lat: 25.0
+            sigma_deg: 10.0
+            amplitude: 0.3
+        diurnal:
+        seasonal:
+        vertical:
+      sep:
+        units: '1'
+        long_name: Sediment supply map
+        background: 0.05
+        sources:
+          - lon: 10.0
+            lat: 22.0
+            sigma_deg: 12.0
+            amplitude: 0.9
+          - lon: 100.0
+            lat: 40.0
+            sigma_deg: 10.0
+            amplitude: 0.7
+        diurnal:
+        seasonal:
+        vertical:
+      uthres:
+        units: m s-1
+        long_name: Threshold friction velocity
+        background: 0.35
+        sources:
+          - lon: 10.0
+            lat: 22.0
+            sigma_deg: 15.0
+            amplitude: 0.2
+        diurnal:
+        seasonal:
+        vertical:
+  fengsha:
+    file: inventories/fengsha.nc
+    cadence: monthly
+    regrid_method: bilinear
+    cece_mapalgo: bilinear
+    grid: inventory
+    is_3d: false
+    level_order: bottom_up
+    masked_by: land
+    variables:
+      albedo_drag:
+        units: '1'
+        long_name: Drag partition
+        background: 0.2
+        sources:
+          - lon: 10.0
+            lat: 22.0
+            sigma_deg: 15.0
+            amplitude: 0.5
+        diurnal:
+        seasonal:
+          relative_amplitude: 0.2
+          peak_month: 1
+        vertical:
+met:
+  surface_pressure_pa: 101325.0
+  temperature_equator_k: 300.0
+  temperature_pole_k: 250.0
+  lapse_rate_k_per_level: 0.6
+  tropopause_level: 90
+  zonal_wind_amplitude_m_s: 25.0
+  pbl_height_m: 800.0
+  soil_moisture: 0.25
+  land_use_class: 1
+  diurnal_amplitude_k: 5.0
+  diurnal_peak_local_hour: 14.0
