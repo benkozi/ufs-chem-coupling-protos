@@ -298,6 +298,9 @@ def test_write_category_file_layout(manifest: mf.Manifest) -> None:
         assert ds.getncattr("category") == "anthro"
         assert ds.getncattr("cece_mapalgo") == "consd"
         assert set(totals.variables) == set(manifest.categories["anthro"].variables)
+        assert totals.times is not None
+        assert len(totals.times) == 25
+        assert totals.times[0] == manifest.clock.start
     with xr.open_dataset(path) as decoded:
         assert str(decoded["time"].values[0])[:16] == "2021-03-22T06:00"
         assert str(decoded["time"].values[-1])[:16] == "2021-03-23T06:00"

@@ -1,10 +1,10 @@
-!> met_catchem: MET and CATChem under the prototype driver.
+!> esmApp: the prototype driver's program (met_catchem, cece_met: the config's `prototype:` names it).
 !!
 !!   esmApp [esm.configure]              run (the config defaults to ./esm.configure)
 !!   esmApp --dump-manifest <manifest>   print every manifest value the components read, then exit
 !!
 !! The field dictionary named in the config is loaded before the driver exists; on success PET 0 prints
-!! "met_catchem: completed <n> steps to <stop time>", on failure the error and an abort.
+!! "<prototype>: completed <n> steps to <stop time>", on failure the error and an abort.
 program esmApp
   use ESMF
   use NUOPC
@@ -19,6 +19,7 @@ program esmApp
   type(ESMF_VM) :: vm
   type(proto_manifest_type) :: m
   character(len=ESMF_MAXPATHLEN) :: config_file, dictionary, arg
+  character(len=64) :: name = "met_catchem"
   character(len=32) :: stamp
   character(len=160) :: summary
   integer(ESMF_KIND_I8) :: steps
@@ -48,12 +49,14 @@ program esmApp
   call check(rc, "ESMF_ConfigCreate", __LINE__)
   call ESMF_ConfigLoadFile(config, trim(config_file), rc=rc)
   call check(rc, "loading driver config "//trim(config_file), __LINE__)
+  call ESMF_ConfigGetAttribute(config, name, label="prototype:", default="met_catchem", rc=rc)
+  call check(rc, "config key 'prototype:' in "//trim(config_file), __LINE__)
   call ESMF_ConfigGetAttribute(config, dictionary, label="field_dictionary:", rc=rc)
   call check(rc, "config key 'field_dictionary:' in "//trim(config_file), __LINE__)
   call NUOPC_FieldDictionarySetup(trim(dictionary), rc=rc)
   call check(rc, "NUOPC_FieldDictionarySetup "//trim(dictionary), __LINE__)
 
-  driver = ESMF_GridCompCreate(name="met_catchem", config=config, rc=rc)
+  driver = ESMF_GridCompCreate(name=trim(name), config=config, rc=rc)
   call check(rc, "ESMF_GridCompCreate", __LINE__)
   call ESMF_GridCompSetServices(driver, driver_SS, userRc=user_rc, rc=rc)
   call check(rc, "SetServices", __LINE__); call check(user_rc, "SetServices (user)", __LINE__)
@@ -72,7 +75,7 @@ program esmApp
   call ESMF_GridCompDestroy(driver, rc=rc)
   call check(rc, "ESMF_GridCompDestroy", __LINE__)
   ! The summary goes to stdout (CTest's pass expression reads it) and to the ESMF log.
-  write (summary, '(a,i0,a,a)') "met_catchem: completed ", steps, " steps to ", trim(stamp)
+  write (summary, '(a,a,i0,a,a)') trim(name)//": completed ", "", steps, " steps to ", trim(stamp)
   call ESMF_LogWrite(trim(summary), ESMF_LOGMSG_INFO, rc=rc)
   if (local_pet == 0) print '(a)', trim(summary)
   call ESMF_Finalize(rc=rc)
@@ -88,8 +91,8 @@ contains
     character(len=16) :: line_text
     if (code == ESMF_SUCCESS) return
     write (line_text, '(i0)') line
-    if (ESMF_LogFoundError(rcToCheck=code, msg="met_catchem: "//what//" failed", line=line, file=__FILE__)) &
-      call abort_with("met_catchem: "//what//" failed at "//__FILE__//":"//trim(line_text)//" (see PET*.ESMF_LogFile)")
+    if (ESMF_LogFoundError(rcToCheck=code, msg=trim(name)//": "//what//" failed", line=line, file=__FILE__)) &
+      call abort_with(trim(name)//": "//what//" failed at "//__FILE__//":"//trim(line_text)//" (see PET*.ESMF_LogFile)")
   end subroutine check
 
   subroutine abort_with(msg)

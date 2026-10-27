@@ -1,0 +1,40 @@
+# CECE configuration of the cece_met prototype (task 4), rendered by CMake from
+# configs/prescribed/cece_met/cece_anthro_no.yaml.in for @RES@ (absolute stream path, the manifest clock).
+# One species, NO, from the task-2 anthro inventory: a `series` stream (CATChem's hourly cadence is a
+# 25-record time axis, not CECE's 24-record hour-of-day profile), linear in time, `limit` so a step outside
+# the axis fails loudly, conservative (consd) onto the host's cubed-sphere DE blocks. The grid comes from the
+# driver (ESMF_GridCompSet); driver.grid.nz is the only grid key CECE reads on that path. Output and local
+# time stay off: both gather by latitude band and are refused on a host-block grid. Keep "NO" quoted (YAML 1.1
+# reads a bare NO as false).
+driver:
+  start_time: "@CECE_START@"
+  end_time: "@CECE_END@"
+  timestep_seconds: @STEP_SECONDS@
+  grid:
+    nz: 1
+
+species:
+  "NO":
+    - field: NO_anthro
+      operation: add
+
+cece_data:
+  streams:
+    - name: anthro
+      file: "@PROTOS_ROOT@/data/@RES@/inventories/anthro.nc"
+      cadence: series
+      tintalgo: linear
+      taxmode: limit
+      mapalgo: consd
+      variables:
+        - file: "NO"
+          model: NO_anthro
+
+nuopc:
+  export_fields:
+    "NO":
+      standard_name: NO_emission_flux
+      units: "kg m-2 s-1"
+
+output:
+  enabled: false

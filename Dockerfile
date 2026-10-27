@@ -149,13 +149,15 @@ RUN --mount=type=cache,target=/repo/data,id=protos-data \
     && cmake --build build -j"$(nproc)" \
     && if ctest --test-dir build --output-on-failure -L "${CTEST_LABEL}" ${CTEST_ARGS}; then \
          echo "ctest -L ${CTEST_LABEL}: passed"; \
-         for d in build/protos/met_catchem/run_*/; do \
+         for d in build/protos/met_catchem/run_*/ build/protos/cece_met/run_*/; do \
            [ -f "$d/PET0.ESMF_LogFile" ] || [ -f "$d/PET00.ESMF_LogFile" ] || continue; \
            echo "== $d: $(ls "$d"/catchem_diag 2>/dev/null | wc -l) diagnostic files"; \
-           grep -h "driver: grid \|reference-shared\|global cell area\|MET: step 120" "$d"/PET0*.ESMF_LogFile | cut -c38- | sort -u; \
+           grep -h "driver: grid \|reference-shared\|global cell area\|MET: step 120\|Parent grid: tileCount\|host-block destination\|Realized export field\|hosted import\|MET: totals 2021-03-23T05:48" "$d"/PET0*.ESMF_LogFile | cut -c38- | sort -u; \
          done; \
+         grep -h "check_conservation:" build/Testing/Temporary/LastTest.log 2>/dev/null | sort -u; \
+         echo "== esmApp yaml-cpp symbols: $(nm -C build/protos/met_catchem/esmApp | grep -c 'catchem_yaml::') catchem_yaml::, $(nm -C build/protos/met_catchem/esmApp | grep -c ' YAML::') YAML:: defined; shared: $(ldd build/protos/met_catchem/esmApp | grep -c yaml-cpp) libyaml-cpp"; \
        else \
          echo "ctest -L ${CTEST_LABEL}: FAILED; ESMF log errors follow"; \
-         grep -h "ERROR" build/protos/met_catchem/run_*/PET0*.ESMF_LogFile 2>/dev/null | tail -40; \
+         grep -h "ERROR" build/protos/met_catchem/run_*/PET0*.ESMF_LogFile build/protos/cece_met/run_*/PET0*.ESMF_LogFile 2>/dev/null | tail -40; \
          exit 1; \
        fi

@@ -27,7 +27,20 @@ message(STATUS "ESMF ${ESMF_VERSION} from ${ESMFMKFILE}")
 
 # CATChem (cc_nuopc and its archive closure) from the image's build tree; defines CATChem::cc_nuopc.
 include(catchem_build_tree)
+# CECE (the NUOPC cap, the core and HELM) from the image's build tree; defines CECE::cece_nuopc_cap.
+include(cece_build_tree)
+
+# The manifest clock the prototypes render into their configs (tools/defaults/manifest.yaml is the single
+# source; a mismatch between a run sequence and the mock data's step would otherwise go unnoticed).
+file(STRINGS ${PROJECT_SOURCE_DIR}/tools/defaults/manifest.yaml _step_line REGEX "^  step_seconds:")
+string(REGEX REPLACE "^  step_seconds: *([0-9]+).*$" "\\1" STEP_SECONDS "${_step_line}")
+if(NOT STEP_SECONDS MATCHES "^[0-9]+$")
+  message(FATAL_ERROR "cannot read clock.step_seconds from tools/defaults/manifest.yaml (got '${_step_line}')")
+endif()
+message(STATUS "manifest coupling step: ${STEP_SECONDS} s")
 
 add_subdirectory(tests/smoke)
 add_subdirectory(tests/mockdata)
+add_subdirectory(tests/grid_probe)
 add_subdirectory(protos/met_catchem)
+add_subdirectory(protos/cece_met)

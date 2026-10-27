@@ -116,6 +116,10 @@ class VariableTotals(mf.Strict):
 
 class CategoryTotals(mf.Strict):
     file: Path = Field(description="The category file the totals were computed from.")
+    times: list[AwareDatetime] | None = Field(
+        default=None,
+        description="Time stamp of each record, in record order (UTC); None for totals written before task 4.",
+    )
     variables: dict[str, VariableTotals] = Field(
         description="Totals per variable name."
     )
@@ -485,7 +489,7 @@ def write_category(
     category.file.parent.mkdir(parents=True, exist_ok=True)
     ds.to_netcdf(category.file, format="NETCDF4", encoding=encoding)
     log.info("wrote %s", category.file)
-    return CategoryTotals(file=category.file, variables=totals)
+    return CategoryTotals(file=category.file, times=axis.stamps, variables=totals)
 
 
 def generate_inventories(manifest: mf.Manifest) -> Totals:
