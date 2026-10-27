@@ -10,8 +10,9 @@ import xarray as xr
 
 from tools import inventories as inv
 from tools import manifest as mf
+from tools.settings import get_settings
 
-R = mf.EARTH_RADIUS_M
+R = get_settings().earth_radius_m
 
 
 def small_manifest(
@@ -293,7 +294,9 @@ def test_write_category_file_layout(manifest: mf.Manifest) -> None:
         assert ds["time_bnds"].shape == (25, 2)
         assert ds["lat"].bounds == "lat_bnds"
         assert ds["area"].units == "m2"
-        assert ds.getncattr("Conventions").startswith("CF-")
+        assert ds.getncattr("Conventions") == get_settings().cf_conventions
+        assert ds.getncattr("category") == "anthro"
+        assert ds.getncattr("cece_mapalgo") == "consd"
         assert set(totals.variables) == set(manifest.categories["anthro"].variables)
     with xr.open_dataset(path) as decoded:
         assert str(decoded["time"].values[0])[:16] == "2021-03-22T06:00"
@@ -317,9 +320,9 @@ def test_totals_match_the_fields_and_round_trip(manifest: mf.Manifest) -> None:
         expected = (ds["CO"].values.astype(float) * area).sum(axis=(1, 2))
     assert np.allclose(totals.variables["CO"].records, expected[:, None], rtol=1e-6)
     assert totals.variables["CO"].units == "kg m-2 s-1"
-    path = manifest.inventories_dir / mf.TOTALS_FILENAME
-    inv.write_totals(inv.Totals(categories={"fire": totals}), path)
-    assert inv.read_totals(path).categories["fire"] == totals
+    path = manifest.inventories_dir / get_settings().totals_filename
+    inv.Totals(categories={"fire": totals}).to_yaml(path)
+    assert inv.Totals.from_yaml(path).categories["fire"] == totals
 
 
 def test_generate_inventories_writes_everything(manifest: mf.Manifest) -> None:
@@ -327,7 +330,7 @@ def test_generate_inventories_writes_everything(manifest: mf.Manifest) -> None:
     for category in manifest.categories.values():
         assert category.file.exists()
     assert manifest.land_mask.file.exists()
-    assert (manifest.inventories_dir / mf.TOTALS_FILENAME).exists()
+    assert (manifest.inventories_dir / get_settings().totals_filename).exists()
     assert set(totals.categories) == set(manifest.categories)
     assert totals.categories["gmi"].variables["oh"].records[0].__len__() == 5
 
@@ -336,8 +339,8 @@ def test_regeneration_from_the_written_manifest_is_bit_identical(
     tmp_path: Path,
 ) -> None:
     first = small_manifest(tmp_path / "a")
-    mf.write_manifest(first, tmp_path / "a" / "manifest.yaml")
-    again = mf.read_manifest(tmp_path / "a" / "manifest.yaml").model_copy(
+    first.to_yaml(tmp_path / "a" / "manifest.yaml")
+    again = mf.Manifest.from_yaml(tmp_path / "a" / "manifest.yaml").model_copy(
         update={
             "land_mask": first.land_mask.model_copy(
                 update={"file": tmp_path / "b" / "landmask.nc"}
@@ -373,3 +376,43 @@ def test_masked_category_needs_the_land_fraction(manifest: mf.Manifest) -> None:
             None,
             axis,
         )
+
+
+def test_file_attributes_leave_out_none_and_stringify() -> None:
+    attrs = inv.FileAttributes(Conventions="CF-1.8", title="t").as_attrs()
+    assert attrs == {
+        "Conventions": "CF-1.8",
+        "title": "t",
+        "source": "tools.make_mock_data",
+    }
+    full = inv.FileAttributes(
+        Conventions="CF-1.8",
+        title="t",
+        category="dms",
+        cadence="monthly",
+        regrid_method="bilinear",
+        cece_mapalgo="bilinear",
+        masked_by="ocean",
+        resolution="C48",
+    ).as_attrs()
+    assert full["masked_by"] == "ocean"
+    assert all(isinstance(v, str) for v in full.values())
+
+
+def test_deflate_settings_reach_the_files(
+    manifest: mf.Manifest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PROTOS_DEFLATE_LEVEL", "0")
+    get_settings.cache_clear()
+    assert inv.VariableEncoding.from_settings().as_encoding() == {
+        "zlib": False,
+        "complevel": 0,
+        "shuffle": True,
+    }
+    inv.write_category(
+        manifest,
+        "dust",
+        inv.land_fraction(manifest.grids["inventory"], manifest.land_mask),
+    )
+    with netCDF4.Dataset(manifest.categories["dust"].file) as ds:
+        assert ds["sep"].filters()["zlib"] is False

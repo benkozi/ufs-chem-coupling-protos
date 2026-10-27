@@ -1,4 +1,4 @@
-"""The project logger: one root handler, configured once, level from the caller or the environment."""
+"""The project logger: one root handler, configured once, level from the caller or the settings."""
 
 import logging
 from collections.abc import Iterator
@@ -6,6 +6,7 @@ from collections.abc import Iterator
 import pytest
 
 from tools import log
+from tools.settings import get_settings
 
 
 @pytest.fixture(autouse=True)
@@ -31,8 +32,9 @@ def test_configure_installs_one_handler_even_when_called_twice() -> None:
     assert root.level == logging.DEBUG
 
 
-def test_level_defaults_to_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv(log.LEVEL_ENV, "WARNING")
+def test_level_defaults_to_the_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PROTOS_LOG_LEVEL", "WARNING")
+    get_settings.cache_clear()
     log.configure()
     assert logging.getLogger(log.ROOT_NAME).level == logging.WARNING
 
@@ -40,14 +42,10 @@ def test_level_defaults_to_the_environment(monkeypatch: pytest.MonkeyPatch) -> N
 def test_level_defaults_to_info_without_the_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv(log.LEVEL_ENV, raising=False)
+    monkeypatch.delenv("PROTOS_LOG_LEVEL", raising=False)
+    get_settings.cache_clear()
     log.configure()
     assert logging.getLogger(log.ROOT_NAME).level == logging.INFO
-
-
-def test_unknown_level_is_rejected() -> None:
-    with pytest.raises(ValueError, match="log level"):
-        log.configure("LOUD")
 
 
 def test_messages_reach_stderr(capsys: pytest.CaptureFixture[str]) -> None:

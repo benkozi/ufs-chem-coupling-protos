@@ -14,9 +14,10 @@ import pytest
 
 from tools import fixfiles
 from tools import manifest as mf
+from tools.settings import get_settings
 
 N48 = 48
-RADIUS = mf.EARTH_RADIUS_M
+RADIUS = get_settings().earth_radius_m
 
 
 # --- synthetic files ---------------------------------------------------------------------------------------
@@ -320,7 +321,7 @@ def test_expected_names_and_urls() -> None:
     fix = fixfiles.fix_files_for("C96", Path("d"))
     assert (
         fixfiles.url_for(fix, "C96_mosaic.nc")
-        == mf.EMC_FIX_URL.format(resolution="C96") + "C96_mosaic.nc"
+        == get_settings().fix_url.format(resolution="C96") + "C96_mosaic.nc"
     )
 
 
@@ -357,3 +358,12 @@ def test_mosaic_without_gridfiles_or_contacts_fails(tmp_path: Path) -> None:
         files[:] = src["gridfiles"][:]
     with pytest.raises(fixfiles.FixFileError, match="ncontact"):
         fixfiles.validate_mosaic(tmp_path / "m3.nc", "C48")
+
+
+def test_area_tolerance_comes_from_the_settings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_fake_grid_spec(tmp_path / "s.nc", 4, area_scale=1.05)
+    monkeypatch.setenv("PROTOS_AREA_TOLERANCE", "0.10")
+    get_settings.cache_clear()
+    assert fixfiles.validate_grid_spec(tmp_path / "s.nc", 4, RADIUS).shape == (4, 4)

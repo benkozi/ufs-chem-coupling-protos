@@ -126,7 +126,7 @@ Two fixes the smoke tests forced: `ESMF_Initialize` takes `logkindflag=` in ESMF
 
 ## 8. Mock data (task 2)
 
-One offline step produces everything a prototype run needs except meteorology (task 3's MET component computes it analytically at run time) and configuration files (task 5's generator; tasks 3 and 4 use hand-written files under `configs/prescribed/`):
+One offline step produces everything a prototype run needs except meteorology (task 3's MET component computes it analytically at run time) and configuration files (task 5's generator; tasks 3 and 4 use hand-written files under `configs/prescribed/`). Its parameter set is the checked-in `tools/defaults/manifest.yaml` (the manifest minus generator, resolution and fix files, with paths relative to `--out`); the command-line options override the clock and the inventory grid, and every environment knob goes through `tools/settings.py` (`PROTOS_*`, table below):
 
 ```bash
 uv run python -m tools.make_mock_data --resolution C48 --out data/C48
@@ -142,15 +142,18 @@ Run from the repository root (`python -m`, not the script path: `uv` does not in
 | --- | --- | --- |
 | `--resolution {C48,C96}` | required | C48 for CI, C96 for the prototype |
 | `--out PATH` | required | output directory, git-ignored (`data/`) |
-| `--start ISO8601` | `2021-03-22T06:00:00Z` | run start with timezone (`catchem_control`); naive stamps are a usage error |
-| `--hours N` | `24` | run length |
-| `--step-seconds N` | `720` | coupling step; must divide the run length |
-| `--levels N` | `127` | model levels (`NPZ`); the `lev` size of `gmi.nc` |
-| `--inventory-resolution DEG` | `1.0` | spacing of the 2-D inventory grid; `360/DEG` must be an integer |
-| `--fix-url URL` | the EMC server | directory URL template with `{resolution}` |
+| `--defaults PATH` | `tools/defaults/manifest.yaml` (`$PROTOS_DEFAULTS`) | the parameter set to start from |
+| `--start ISO8601` | the defaults file's `clock.start` (`2021-03-22T06:00:00Z`, `catchem_control`) | run start with timezone; naive stamps are a usage error |
+| `--hours N` | the defaults file's `clock.duration_hours` (24) | run length |
+| `--step-seconds N` | the defaults file's `clock.step_seconds` (720) | coupling step; must divide the run length |
+| `--levels N` | the defaults file's `clock.n_levels` (127) | model levels (`NPZ`); the `lev` size of `gmi.nc` |
+| `--inventory-resolution DEG` | the defaults file's `grids.inventory` (1°) | spacing of the 2-D inventory grid; `360/DEG` must be an integer |
+| `--fix-url URL` | the settings' `fix_url` (`$PROTOS_FIX_URL`, the EMC server) | directory URL template with `{resolution}` |
 | `--log-level LEVEL` | `$PROTOS_LOG_LEVEL` or `INFO` | logging through `tools/log.py` |
 
-Exit status: 0 on success, 1 when the fetch or the generation fails (logged at `ERROR`, traceback at `DEBUG`), 2 for a usage error.
+Exit status: 0 on success, 1 when the fetch or the generation fails (logged at `ERROR`, traceback at `DEBUG`), 2 for a usage error (including a missing or invalid defaults file).
+
+To run with a different parameter set, copy `tools/defaults/manifest.yaml`, edit it (the file is the manifest schema below without `generator`, `resolution` and `fix`; keep CATChem's `NO` quoted, an unquoted `NO` is boolean false in YAML 1.1), and pass `--defaults` or set `PROTOS_DEFAULTS`. The defaults file never changes behind your back: a test pins its content by digest, so editing it means updating that test on purpose.
 
 ### Outputs
 
@@ -173,19 +176,11 @@ Every inventory file is CF: 1-D `lon`/`lat` centres with `lon_bnds`/`lat_bnds`, 
 
 Source: `https://ftp.emc.ncep.noaa.gov/static_files/public/UFS/GFS/fix/fix_fv3/<res>/` (plain directory listing; files dated October 2016; C48 set 3.7 MB, C96 set 13.8 MB). `tools/fixfiles.py` streams each file to `<name>.part` and renames it only when the byte count equals `Content-Length`; a short read or HTTP error removes the partial file, logs an `ERROR` and the command exits 1. Files that are present and valid are skipped, so a second run is offline. Validation per file mirrors what the consumers read: the mosaic must have `ntiles = 6`, `gridfiles` naming the six tiles and `ncontact = 12`; a `grid` tile must carry a `grid_tile_spec` variable with `projection = cube_gnomonic` and `(2N+1)²` `geographic_longitude`/`geographic_latitude` supergrids (that is how `ESMF_GridCreateMosaic` finds them); a `grid_spec` tile must carry `(N, N)` `grid_lont`/`grid_latt`/`area` and `(N+1, N+1)` `grid_lon`/`grid_lat`, with the tile's area within 1 % of a sixth of the sphere. The mosaic's `gridlocation` is the generating machine's absolute path; the driver passes `tileFilePath=data/<res>/fix/` to ESMF instead.
 
-Local cache: `data/<res>/fix/`. CI: the `ctest` job caches `data/C48/fix` with `actions/cache` under the key `fixfiles-C48-<hash of tools/fixfiles.py>`, so only a change to the fetch module re-downloads.
+Local cache: `data/<res>/fix/`. CI: the `ctest` job caches `data/C48/fix` with `actions/cache` under the key `fixfiles-C48-<hash of tools/fixfiles.py>`, so only a change to the fetch module re-downloads. The URL template, download timeout, chunk size and the area tolerance are settings (`PROTOS_FIX_URL`, `PROTOS_DOWNLOAD_TIMEOUT_S`, `PROTOS_DOWNLOAD_CHUNK_BYTES`, `PROTOS_AREA_TOLERANCE`).
 
-### Fixture
+### Test fixture (downloaded on demand, never committed)
 
-`tools/tests/fixtures/C48/` holds the real `C48_mosaic.nc` (21,966 B) and `C48_grid_spec.tile1.nc` (66,944 B) as downloaded, and `C48_grid.tile1.nc` re-encoded losslessly (netCDF-4, deflate level 4 with shuffle; 268,053 B instead of 538,966 B, same variables, attributes and values), so every file stays under the 500 KB `check-added-large-files` limit. The tests run the validators on these complete real files and build tiny synthetic tile sets (`n = 4`) for the six-tile and failure cases; the suite never opens a network connection (an autouse fixture makes `urllib.request.urlopen` fail). To regenerate the fixture after a fresh download:
-
-```bash
-nccopy -d 4 -s data/C48/fix/C48_grid.tile1.nc tools/tests/fixtures/C48/C48_grid.tile1.nc
-```
-
-```bash
-cp data/C48/fix/C48_mosaic.nc data/C48/fix/C48_grid_spec.tile1.nc tools/tests/fixtures/C48/
-```
+No NetCDF file is committed (`*.nc` is git-ignored). The validator tests read the real `C48_mosaic.nc`, `C48_grid.tile1.nc` and `C48_grid_spec.tile1.nc`, which the session-scoped `c48_fixture_dir` fixture in `tools/tests/conftest.py` downloads once into the settings' `fixture_dir` (`data/fixtures/C48/`, `PROTOS_FIXTURE_DIR`; 627 KB) through the real opener and reuses afterwards; every other download in the suite is mocked, and an autouse fixture makes any other use of `urllib.request.urlopen` fail. The `pytest` CI job caches `data/fixtures/C48` under the key `fixtures-C48-<hash of tools/fixfiles.py>`. The six-tile and failure cases use tiny synthetic tiles (`n = 4`) written in `tmp_path`. To refresh the cache, delete `data/fixtures/C48` and run the suite again.
 
 ### CTest fixtures
 
@@ -200,18 +195,54 @@ cp data/C48/fix/C48_mosaic.nc data/C48/fix/C48_grid_spec.tile1.nc tools/tests/fi
 
 The inventory grids do not depend on the cubed-sphere resolution, so the C48 and C96 inventories are the same size; only `fix/` differs.
 
+### Settings (`tools/settings.py`, environment prefix `PROTOS_`)
+
+One shared object for every environment variable, tunable constant and default-file path; `get_settings()` reads it once per process. No other module reads the environment.
+
+`Settings`
+
+| Field | Env | Type | Default | Description |
+| --- | --- | --- | --- | --- |
+| `log_level` | `PROTOS_LOG_LEVEL` | `Literal['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']` | `'INFO'` | Level of the project logger (PROTOS_LOG_LEVEL); the CLI's --log-level wins when given. |
+| `log_format` | `PROTOS_LOG_FORMAT` | `str` | `'%(asctime)s %(levelname)s %(name)s: %(message)s'` | logging.Formatter format of the single stderr handler. |
+| `fix_url` | `PROTOS_FIX_URL` | `str` | `'https://ftp.emc.ncep.noaa.gov/static_files/public/UFS/GFS/fix/fix_fv3/{resolution}/'` | Directory URL template of the FV3 fix files; {resolution} is C48 or C96. |
+| `download_timeout_s` | `PROTOS_DOWNLOAD_TIMEOUT_S` | `float` | `120.0` | Socket timeout of each fix-file download, seconds. |
+| `download_chunk_bytes` | `PROTOS_DOWNLOAD_CHUNK_BYTES` | `int` | `1048576` | Read size while streaming a download to its .part file. |
+| `area_tolerance` | `PROTOS_AREA_TOLERANCE` | `float` | `0.01` | Allowed relative deviation of a grid_spec tile's total area from a sixth of the sphere. |
+| `earth_radius_m` | `PROTOS_EARTH_RADIUS_M` | `float` | `6371000.0` | Earth radius used for the inventory cell areas, m (FV3's RADIUS). |
+| `cf_conventions` | `PROTOS_CF_CONVENTIONS` | `str` | `'CF-1.8'` | Value of the Conventions attribute written to every NetCDF file. |
+| `deflate_level` | `PROTOS_DEFLATE_LEVEL` | `int` | `1` | zlib deflate level of the inventory variables (0 disables compression). |
+| `deflate_shuffle` | `PROTOS_DEFLATE_SHUFFLE` | `bool` | `True` | Apply the HDF5 shuffle filter before deflate. |
+| `generator_version` | `PROTOS_GENERATOR_VERSION` | `str` | `'0.1.0'` | Version string the generator writes into the manifest. |
+| `defaults_file` | `PROTOS_DEFAULTS` | `Path` | `PosixPath('tools/defaults/manifest.yaml')` | YAML file with the default manifest parameters (PROTOS_DEFAULTS); --defaults wins when given. |
+| `manifest_filename` | `PROTOS_MANIFEST_FILENAME` | `str` | `'manifest.yaml'` | Name of the manifest written under --out. |
+| `totals_filename` | `PROTOS_TOTALS_FILENAME` | `str` | `'totals.yaml'` | Name of the totals file written under the inventories directory. |
+| `fix_dirname` | `PROTOS_FIX_DIRNAME` | `str` | `'fix'` | Subdirectory of --out holding the fix files. |
+| `fixture_dir` | `PROTOS_FIXTURE_DIR` | `Path` | `PosixPath('data/fixtures/C48')` | Where the test suite caches the real C48 mosaic and tile-1 files it downloads on demand (PROTOS_FIXTURE_DIR). |
+
 ### Manifest schema (`data/<res>/manifest.yaml`, `tools/manifest.py`)
 
-Every model forbids unknown keys and every field is described; `tools.manifest.read_manifest(path)` validates a file and `write_manifest(manifest, path)` writes one. `cece_mapalgo` is derived from `regrid_method` when omitted (`conserve → consd`, `bilinear → bilinear`, `none → passthrough`) and rejected when inconsistent. `met` is read by task 3's MET component and extended there, never by loose keys.
+Every model forbids unknown keys and every field is described; every model reads and writes itself with `Model.from_yaml(path)` / `model.to_yaml(path)`. `ManifestDefaults` (the checked-in `tools/defaults/manifest.yaml`) carries the `Parameters` fields with relative paths; `Manifest` adds `generator`, `resolution` and `fix`. `cece_mapalgo` is derived from `regrid_method` when omitted (`conserve → consd`, `bilinear → bilinear`, `none → passthrough`) and rejected when inconsistent. `met` is read by task 3's MET component and extended there, never by loose keys.
 
 `Manifest`
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
+| `earth_radius_m` | `float` | required | Earth radius used for the inventory cell areas, m (FV3's RADIUS). |
+| `clock` | `Clock` | required | Start, length, step and levels of the run. |
+| `grids` | `dict[str, LatLonGrid]` | required | Named regular lat-lon grids the inventories are written on. |
+| `land_mask` | `LandMask` | required | The analytic land mask. |
+| `categories` | `dict[str, Category]` | required | One entry per CATChem emission category. |
+| `met` | `MetParams` | required | Analytic meteorology parameters for task 3's MET component. |
 | `generator` | `GeneratorInfo` | required | Who wrote the manifest and how. |
 | `resolution` | `Literal['C48', 'C96']` | required | Cubed-sphere resolution: C48 (CI) or C96 (prototype default). |
-| `earth_radius_m` | `float` | `6371000.0` | Earth radius used for the inventory cell areas, m (FV3's RADIUS). |
 | `fix` | `FixFiles` | required | The FV3 fix files for the resolution. |
+
+`ManifestDefaults`
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `earth_radius_m` | `float` | required | Earth radius used for the inventory cell areas, m (FV3's RADIUS). |
 | `clock` | `Clock` | required | Start, length, step and levels of the run. |
 | `grids` | `dict[str, LatLonGrid]` | required | Named regular lat-lon grids the inventories are written on. |
 | `land_mask` | `LandMask` | required | The analytic land mask. |
@@ -223,7 +254,7 @@ Every model forbids unknown keys and every field is described; `tools.manifest.r
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `version` | `str` | required | Version of the mock data generator that wrote this manifest. |
-| `generated_at` | `pydantic.types.AwareDatetime` | required | UTC time at which the manifest was written. |
+| `generated_at` | `AwareDatetime` | required | UTC time at which the manifest was written. |
 | `command` | `str` | required | The command line that produced this run, for the record. |
 
 `FixFiles`
@@ -241,7 +272,7 @@ Every model forbids unknown keys and every field is described; `tools.manifest.r
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `start` | `pydantic.types.AwareDatetime` | required | Run start (timezone-aware, UTC); the first record of every hourly and static inventory. |
+| `start` | `AwareDatetime` | required | Run start (timezone-aware, UTC); the first record of every hourly and static inventory. |
 | `duration_hours` | `int` | required | Run length in hours; hourly inventories cover it inclusively. |
 | `step_seconds` | `int` | required | Coupling step in seconds (DT_ATMOS and coupling_interval_sec in catchem_control). |
 | `n_levels` | `int` | required | Number of model levels (NPZ); the vertical size of 3-D inventories. |
@@ -348,4 +379,59 @@ Every model forbids unknown keys and every field is described; `tools.manifest.r
 | `diurnal_amplitude_k` | `float` | required | Amplitude of the surface temperature diurnal cycle, K. |
 | `diurnal_peak_local_hour` | `float` | required | Local solar hour of the temperature maximum. |
 
-`totals.yaml` is `tools.inventories.Totals`: `categories.<name>.file` and `categories.<name>.variables.<var>.units` / `.records[record][level]` (one level for 2-D fields), the sum of field times cell area.
+### File models (`tools/inventories.py`)
+
+`FileAttributes`
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `Conventions` | `str` | required | CF conventions version (settings `cf_conventions`). |
+| `title` | `str` | required | What the file holds. |
+| `source` | `str` | `'tools.make_mock_data'` | The generator that wrote the file. |
+| `category` | `str | None` | `None` | CATChem category name (inventory files). |
+| `cadence` | `Literal['hourly', 'monthly', 'static'] | None` | `None` | hourly, monthly or static (inventory files). |
+| `regrid_method` | `Literal['conserve', 'bilinear', 'none'] | None` | `None` | CATChem-style regrid method the prototype assigns (inventory files). |
+| `cece_mapalgo` | `Literal['consd', 'bilinear', 'passthrough'] | None` | `None` | CECE stream mapalgo (inventory files). |
+| `masked_by` | `Literal['land', 'ocean', 'none'] | None` | `None` | land, ocean or none (inventory files). |
+| `resolution` | `Literal['C48', 'C96'] | None` | `None` | Cubed-sphere resolution of the run (inventory files). |
+
+`VariableEncoding`
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `zlib` | `bool` | required | Whether the variable is deflated. |
+| `complevel` | `int` | required | zlib level, 0-9. |
+| `shuffle` | `bool` | required | HDF5 shuffle filter before deflate. |
+
+`Totals`
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `categories` | `dict[str, CategoryTotals]` | required | Totals per category name. |
+
+`CategoryTotals`
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `file` | `Path` | required | The category file the totals were computed from. |
+| `variables` | `dict[str, VariableTotals]` | required | Totals per variable name. |
+
+`VariableTotals`
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `units` | `str` | required | Units of the field; the totals are field times area, i.e. these units times m². |
+| `records` | `list[list[float]]` | required | Sum of field times cell area, indexed [record][level] (one level for 2-D fields). |
+
+`TimeAxis`
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `cadence` | `Literal['hourly', 'monthly', 'static']` | required | Cadence the axis was built for. |
+| `values` | `list[float]` | required | Record times in `units` (the centre of each record's interval). |
+| `bounds` | `list[tuple[float, float]]` | required | Record intervals in `units`. |
+| `units` | `str` | required | CF time units string, e.g. 'hours since 2021-03-22 06:00:00'. |
+| `calendar` | `str` | `'standard'` | CF calendar attribute. |
+| `stamps` | `list[AwareDatetime]` | required | The record times as datetimes, for evaluating the cycles. |
+
+`totals.yaml` is `Totals`: `categories.<name>.file` and `categories.<name>.variables.<var>.units` / `.records[record][level]` (one level for 2-D fields), the sum of field times cell area.

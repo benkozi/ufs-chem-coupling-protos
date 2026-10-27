@@ -1,6 +1,9 @@
 """The run manifest: the contract between the mock data step and the later tasks."""
 
+import hashlib
 import inspect
+import json
+import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -9,6 +12,7 @@ import pytest
 import yaml
 
 from tools import manifest as mf
+from tools.settings import get_settings
 
 START = datetime(2021, 3, 22, 6, tzinfo=UTC)
 
@@ -16,9 +20,9 @@ START = datetime(2021, 3, 22, 6, tzinfo=UTC)
 def make(
     out_dir: Path,
     *,
-    start: datetime = mf.DEFAULT_START,
-    step_seconds: int = 720,
-    inventory_resolution_deg: float = 1.0,
+    start: datetime | None = None,
+    step_seconds: int | None = None,
+    inventory_resolution_deg: float | None = None,
 ) -> mf.Manifest:
     return mf.default_manifest(
         resolution="C48",
@@ -78,8 +82,8 @@ def test_cece_mapalgo_is_derived_from_the_regrid_method(tmp_path: Path) -> None:
 def test_yaml_round_trip_is_lossless(tmp_path: Path) -> None:
     m = make(tmp_path)
     path = tmp_path / "manifest.yaml"
-    mf.write_manifest(m, path)
-    again = mf.read_manifest(path)
+    m.to_yaml(path)
+    again = mf.Manifest.from_yaml(path)
     assert again == m
     assert again.model_dump(mode="json") == m.model_dump(mode="json")
 
@@ -87,7 +91,7 @@ def test_yaml_round_trip_is_lossless(tmp_path: Path) -> None:
 def test_unknown_keys_are_rejected_at_every_level(tmp_path: Path) -> None:
     m = make(tmp_path)
     path = tmp_path / "manifest.yaml"
-    mf.write_manifest(m, path)
+    m.to_yaml(path)
     doc = yaml.safe_load(path.read_text())
     top = dict(doc, surprise=1)
     with pytest.raises(pydantic.ValidationError, match="surprise"):
@@ -148,4 +152,73 @@ def test_c96_paths(tmp_path: Path) -> None:
     assert m.n == 96
     assert m.fix.grid_tiles[5].name == "C96_grid.tile6.nc"
     assert m.fix.grid_spec_tiles[0].name == "C96_grid_spec.tile1.nc"
-    assert m.fix.source_url.endswith("/C96/")
+    assert m.fix.source_url == get_settings().fix_url.format(resolution="C96")
+
+
+# --- the defaults file -------------------------------------------------------------------------------------
+
+# sha256 of the canonical JSON dump of ManifestDefaults from tools/defaults/manifest.yaml. It equals the
+# defaults reviewed in the PR's first commit (51f1cea, Python literals) except for four amplitudes whose
+# computed values (2e-11 * 1.25 and the like) were rounded to the intended literals (one ULP, 1.3e-16 relative).
+DEFAULTS_DIGEST = "4a9c04487f21475f05961112ed0b351d664d30d0ea0bc11ae0deae24af47a93c"
+
+
+def test_checked_in_defaults_validate_and_are_pinned() -> None:
+    defaults = mf.ManifestDefaults.from_yaml(get_settings().defaults_file)
+    canonical = json.dumps(
+        defaults.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+    )
+    assert hashlib.sha256(canonical.encode()).hexdigest() == DEFAULTS_DIGEST
+    assert not defaults.land_mask.file.is_absolute()
+    assert all(not c.file.is_absolute() for c in defaults.categories.values())
+
+
+def test_default_manifest_roots_relative_paths_and_keeps_absolute_ones(
+    tmp_path: Path,
+) -> None:
+    m = make(tmp_path)
+    assert m.categories["gmi"].file == tmp_path / "inventories" / "gmi.nc"
+    assert m.inventories_dir == tmp_path / "inventories"
+    custom = tmp_path / "defaults.yaml"
+    doc = yaml.safe_load(get_settings().defaults_file.read_text())
+    doc["categories"]["dms"]["file"] = str(tmp_path / "elsewhere" / "dms.nc")
+    doc["clock"]["step_seconds"] = 1800
+    custom.write_text(yaml.safe_dump(doc))
+    m2 = mf.default_manifest(
+        resolution="C48", out_dir=tmp_path / "out", command="x", defaults_file=custom
+    )
+    assert m2.categories["dms"].file == tmp_path / "elsewhere" / "dms.nc"
+    assert (
+        m2.categories["anthro"].file == tmp_path / "out" / "inventories" / "anthro.nc"
+    )
+    assert m2.clock.step_seconds == 1800
+
+
+def test_defaults_file_from_the_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    custom = tmp_path / "d.yaml"
+    shutil.copy(get_settings().defaults_file, custom)
+    monkeypatch.setenv("PROTOS_DEFAULTS", str(custom))
+    get_settings.cache_clear()
+    assert get_settings().defaults_file == custom
+    assert make(tmp_path).clock.n_levels == 127
+
+
+def test_a_broken_defaults_file_is_a_validation_error(tmp_path: Path) -> None:
+    broken = tmp_path / "broken.yaml"
+    doc = yaml.safe_load(get_settings().defaults_file.read_text())
+    doc["met"]["colour"] = "red"
+    broken.write_text(yaml.safe_dump(doc))
+    with pytest.raises(pydantic.ValidationError, match="colour"):
+        mf.default_manifest(
+            resolution="C48", out_dir=tmp_path, command="x", defaults_file=broken
+        )
+
+
+def test_strict_models_round_trip_through_yaml_generically(tmp_path: Path) -> None:
+    grid = mf.LatLonGrid(
+        dlon=2.0, dlat=2.0, lon_first=-179.0, lat_first=-89.0, nlon=180, nlat=90
+    )
+    grid.to_yaml(tmp_path / "sub" / "grid.yaml")
+    assert mf.LatLonGrid.from_yaml(tmp_path / "sub" / "grid.yaml") == grid

@@ -3,8 +3,10 @@
     uv run python -m tools.make_mock_data --resolution C48 --out data/C48
 
 Fetches and validates the FV3 fix files for the resolution, writes the analytic land mask, the six category
-files and totals.yaml under <out>/inventories, and <out>/manifest.yaml describing all of it. Exit status 0 on
-success, 1 when the fetch or the generation fails (logged), 2 for a usage error.
+files and totals.yaml under <out>/inventories, and <out>/manifest.yaml describing all of it. The parameter
+set comes from the defaults file (`tools/defaults/manifest.yaml`, or --defaults / PROTOS_DEFAULTS) with the
+clock and grid options overriding it. Exit status 0 on success, 1 when the fetch or the generation fails
+(logged), 2 for a usage error.
 """
 
 from __future__ import annotations
@@ -14,11 +16,13 @@ import sys
 from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
+from typing import get_args
 
 import pydantic
 
 from tools import fixfiles, inventories, log
 from tools import manifest as mf
+from tools.settings import LogLevel, get_settings
 
 logger = log.get_logger("make_mock_data")
 
@@ -37,6 +41,7 @@ def aware_datetime(text: str) -> datetime:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    settings = get_settings()
     parser = argparse.ArgumentParser(
         prog="make_mock_data", description=__doc__.split("\n\n")[0]
     )
@@ -53,46 +58,52 @@ def build_parser() -> argparse.ArgumentParser:
         help="output directory, e.g. data/C48 (git-ignored)",
     )
     parser.add_argument(
+        "--defaults",
+        type=Path,
+        default=None,
+        help=f"defaults file (default: {settings.defaults_file}, or $PROTOS_DEFAULTS)",
+    )
+    parser.add_argument(
         "--start",
         type=aware_datetime,
-        default=mf.DEFAULT_START,
-        help="run start, ISO 8601 with timezone (default: %(default)s, catchem_control)",
+        default=None,
+        help="run start, ISO 8601 with timezone (default: the defaults file's clock.start)",
     )
     parser.add_argument(
         "--hours",
         type=int,
-        default=24,
-        help="run length in hours (default: %(default)s)",
+        default=None,
+        help="run length in hours (default: the defaults file's clock.duration_hours)",
     )
     parser.add_argument(
         "--step-seconds",
         type=int,
-        default=720,
-        help="coupling step in seconds (default: %(default)s)",
+        default=None,
+        help="coupling step in seconds (default: the defaults file's clock.step_seconds)",
     )
     parser.add_argument(
         "--levels",
         type=int,
-        default=127,
-        help="number of model levels (default: %(default)s)",
+        default=None,
+        help="number of model levels (default: the defaults file's clock.n_levels)",
     )
     parser.add_argument(
         "--inventory-resolution",
         type=float,
-        default=1.0,
+        default=None,
         metavar="DEG",
-        help="lat-lon spacing of the 2-D inventory grid in degrees (default: %(default)s)",
+        help="lat-lon spacing of the 2-D inventory grid in degrees (default: the defaults file's grids.inventory)",
     )
     parser.add_argument(
         "--fix-url",
-        default=mf.EMC_FIX_URL,
-        help="fix-file directory URL template with {resolution} (default: the EMC server)",
+        default=None,
+        help=f"fix-file directory URL template with {{resolution}} (default: {settings.fix_url}, or $PROTOS_FIX_URL)",
     )
     parser.add_argument(
         "--log-level",
         default=None,
-        choices=log.LEVELS,
-        help=f"log level (default: ${log.LEVEL_ENV} or {log.DEFAULT_LEVEL})",
+        choices=get_args(LogLevel),
+        help=f"log level (default: $PROTOS_LOG_LEVEL or {settings.log_level})",
     )
     return parser
 
@@ -106,6 +117,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             resolution=args.resolution,
             out_dir=args.out,
             command=" ".join(["make_mock_data", *args_list]),
+            defaults_file=args.defaults,
             start=args.start,
             duration_hours=args.hours,
             step_seconds=args.step_seconds,
@@ -113,8 +125,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             inventory_resolution_deg=args.inventory_resolution,
             source_url=args.fix_url,
         )
-    except pydantic.ValidationError as exc:
-        logger.error("invalid run parameters: %s", exc)
+    except (pydantic.ValidationError, OSError) as exc:
+        logger.error("invalid run parameters or defaults file: %s", exc)
         return 2
     logger.info(
         "mock data for %s -> %s (%s, %d h, %d s step, %d levels)",
@@ -125,23 +137,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         manifest.clock.step_seconds,
         manifest.clock.n_levels,
     )
+    manifest_path = args.out / get_settings().manifest_filename
     try:
         sizes = fixfiles.fetch(
-            manifest.fix,
-            resolution=manifest.resolution,
-            n=manifest.n,
-            radius_m=manifest.earth_radius_m,
+            manifest.fix, manifest.resolution, manifest.n, manifest.earth_radius_m
         )
         manifest = manifest.model_copy(
             update={"fix": manifest.fix.model_copy(update={"sizes": sizes})}
         )
         inventories.generate_inventories(manifest)
-        mf.write_manifest(manifest, args.out / mf.MANIFEST_FILENAME)
+        manifest.to_yaml(manifest_path)
     except (fixfiles.FixFileError, OSError, ValueError) as exc:
         logger.error("%s", exc)
         logger.debug("traceback", exc_info=True)
         return 1
-    logger.info("wrote %s", args.out / mf.MANIFEST_FILENAME)
+    logger.info("wrote %s", manifest_path)
     return 0
 
 

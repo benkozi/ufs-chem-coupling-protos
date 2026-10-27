@@ -4,17 +4,20 @@ The manifest is the contract later tasks read back: task 3's analytic MET compon
 config generator takes the grid, clock, categories and regrid mapping, tasks 4 and 9 take the per-category
 files and `totals.yaml`. Every model forbids unknown keys and every field carries a description, so a
 hand-edited manifest fails loudly instead of being half-read. Every generated field is a closed-form function
-of the parameters here (no random numbers), so a run is reproducible from the manifest alone.
+of the parameters here (no random numbers), so a run is reproducible from the manifest alone. The default
+parameter set is the YAML file `tools/defaults/manifest.yaml` (`ManifestDefaults`), not Python literals.
 """
 
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Self
 
 import yaml
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
+
+from tools.settings import get_settings
 
 ResolutionName = Literal["C48", "C96"]
 Cadence = Literal["hourly", "monthly", "static"]
@@ -23,29 +26,27 @@ CeceMapalgo = Literal["consd", "bilinear", "passthrough"]
 LevelOrder = Literal["bottom_up", "top_down"]
 MaskedBy = Literal["land", "ocean", "none"]
 
+# Code enumerations, not configuration: the categories the prototype knows and the CATChem -> CECE regrid mapping.
 CATEGORY_NAMES: tuple[str, ...] = ("anthro", "fire", "gmi", "dms", "dust", "fengsha")
 REGRID_TO_MAPALGO: dict[str, CeceMapalgo] = {
     "conserve": "consd",
     "bilinear": "bilinear",
     "none": "passthrough",
 }
-EMC_FIX_URL = "https://ftp.emc.ncep.noaa.gov/static_files/public/UFS/GFS/fix/fix_fv3/{resolution}/"
-EARTH_RADIUS_M = 6371.0e3
-MANIFEST_FILENAME = "manifest.yaml"
-TOTALS_FILENAME = "totals.yaml"
-FIX_DIRNAME = "fix"
-INVENTORIES_DIRNAME = "inventories"
-LANDMASK_FILENAME = "landmask.nc"
-GENERATOR_VERSION = "0.1.0"
-DEFAULT_START = datetime(
-    2021, 3, 22, 6, tzinfo=UTC
-)  # catchem_control: SYEAR/SMONTH/SDAY/SHOUR
 
 
 class Strict(BaseModel):
-    """Base for every manifest model: unknown keys are an error."""
+    """Base for every manifest model: unknown keys are an error; every model reads and writes itself as YAML."""
 
     model_config = ConfigDict(extra="forbid")
+
+    @classmethod
+    def from_yaml(cls, path: Path) -> Self:
+        return cls.model_validate(yaml.safe_load(path.read_text()))
+
+    def to_yaml(self, path: Path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(yaml.safe_dump(self.model_dump(mode="json"), sort_keys=False))
 
 
 class GeneratorInfo(Strict):
@@ -334,17 +335,13 @@ class MetParams(Strict):
     )
 
 
-class Manifest(Strict):
-    generator: GeneratorInfo = Field(description="Who wrote the manifest and how.")
-    resolution: ResolutionName = Field(
-        description="Cubed-sphere resolution: C48 (CI) or C96 (prototype default)."
-    )
+class Parameters(Strict):
+    """The parameter set shared by the defaults file and the manifest: everything but who/what/where."""
+
     earth_radius_m: float = Field(
-        default=EARTH_RADIUS_M,
         description="Earth radius used for the inventory cell areas, m (FV3's RADIUS).",
         gt=0,
     )
-    fix: FixFiles = Field(description="The FV3 fix files for the resolution.")
     clock: Clock = Field(description="Start, length, step and levels of the run.")
     grids: dict[str, LatLonGrid] = Field(
         description="Named regular lat-lon grids the inventories are written on."
@@ -358,7 +355,7 @@ class Manifest(Strict):
     )
 
     @model_validator(mode="after")
-    def _references_resolve(self) -> Manifest:
+    def _references_resolve(self) -> Self:
         for name in self.categories:
             if name not in CATEGORY_NAMES:
                 raise ValueError(
@@ -376,27 +373,31 @@ class Manifest(Strict):
         return self
 
     @property
-    def n(self) -> int:
-        return int(self.resolution[1:])
-
-    @property
     def inventories_dir(self) -> Path:
         return self.land_mask.file.parent
 
 
-def write_manifest(manifest: Manifest, path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(manifest.model_dump(mode="json"), sort_keys=False))
+class ManifestDefaults(Parameters):
+    """The checked-in defaults (`tools/defaults/manifest.yaml`): file paths are relative to the output directory."""
 
 
-def read_manifest(path: Path) -> Manifest:
-    return Manifest.model_validate(yaml.safe_load(path.read_text()))
+class Manifest(Parameters):
+    generator: GeneratorInfo = Field(description="Who wrote the manifest and how.")
+    resolution: ResolutionName = Field(
+        description="Cubed-sphere resolution: C48 (CI) or C96 (prototype default)."
+    )
+    fix: FixFiles = Field(description="The FV3 fix files for the resolution.")
+
+    @property
+    def n(self) -> int:
+        return int(self.resolution[1:])
 
 
-# --- defaults ----------------------------------------------------------------------------------------------
+# --- building a manifest from the defaults file ------------------------------------------------------------
 
 
-def _grid(resolution_deg: float) -> LatLonGrid:
+def inventory_grid(resolution_deg: float) -> LatLonGrid:
+    """A global cell-centred grid with the given spacing (first centre at -180 + d/2, -90 + d/2)."""
     return LatLonGrid(
         dlon=resolution_deg,
         dlat=resolution_deg,
@@ -407,262 +408,8 @@ def _grid(resolution_deg: float) -> LatLonGrid:
     )
 
 
-def _src(lon: float, lat: float, sigma: float, amplitude: float) -> GaussianSource:
-    return GaussianSource(lon=lon, lat=lat, sigma_deg=sigma, amplitude=amplitude)
-
-
-# Three industrial/populated regions on the three default continents (Eurasia-Africa, the Americas, Australia).
-_LAND_CENTRES = ((15.0, 48.0), (-80.0, 40.0), (115.0, 32.0))
-_FIRE_CENTRES = ((25.0, -5.0), (-60.0, -10.0), (135.0, -20.0))
-
-
-def _flux(
-    long_name: str,
-    scale: float,
-    centres: tuple[tuple[float, float], ...],
-    diurnal: Diurnal,
-) -> Variable:
-    sources = [
-        _src(lon, lat, 12.0 + 3.0 * i, scale * (1.0 + 0.25 * i))
-        for i, (lon, lat) in enumerate(centres)
-    ]
-    return Variable(
-        units="kg m-2 s-1",
-        long_name=long_name,
-        background=0.0,
-        sources=sources,
-        diurnal=diurnal,
-    )
-
-
-def default_categories(inventories_dir: Path) -> dict[str, Category]:
-    anthro_cycle = Diurnal(relative_amplitude=0.5, peak_local_hour=14.0)
-    fire_cycle = Diurnal(relative_amplitude=0.8, peak_local_hour=15.0)
-    summer = Seasonal(relative_amplitude=0.3, peak_month=7)
-    winter = Seasonal(relative_amplitude=0.2, peak_month=1)
-    column = Vertical(scale_height_levels=25.0)
-    return {
-        "anthro": Category(
-            file=inventories_dir / "anthro.nc",
-            cadence="hourly",
-            regrid_method="conserve",
-            grid="inventory",
-            is_3d=False,
-            masked_by="land",
-            variables={
-                "NO": _flux(
-                    "Nitrogen oxide emission flux", 2.0e-10, _LAND_CENTRES, anthro_cycle
-                ),
-                "SO2": _flux(
-                    "Sulfur dioxide emission flux", 1.5e-10, _LAND_CENTRES, anthro_cycle
-                ),
-                "POC": _flux(
-                    "Primary organic carbon emission flux",
-                    4.0e-11,
-                    _LAND_CENTRES,
-                    anthro_cycle,
-                ),
-                "TERP": _flux(
-                    "Terpene emission flux", 3.0e-11, _LAND_CENTRES, anthro_cycle
-                ),
-                "ISOP": _flux(
-                    "Isoprene emission flux", 5.0e-11, _LAND_CENTRES, anthro_cycle
-                ),
-                "PEC": _flux(
-                    "Primary elemental carbon emission flux",
-                    2.0e-11,
-                    _LAND_CENTRES,
-                    anthro_cycle,
-                ),
-                "PSO4": _flux(
-                    "Primary sulfate emission flux",
-                    1.0e-11,
-                    _LAND_CENTRES,
-                    anthro_cycle,
-                ),
-            },
-        ),
-        "fire": Category(
-            file=inventories_dir / "fire.nc",
-            cadence="hourly",
-            regrid_method="conserve",
-            grid="inventory",
-            is_3d=False,
-            masked_by="land",
-            variables={
-                "NO": _flux(
-                    "Fire nitrogen oxide emission flux",
-                    1.0e-10,
-                    _FIRE_CENTRES,
-                    fire_cycle,
-                ),
-                "SO2": _flux(
-                    "Fire sulfur dioxide emission flux",
-                    3.0e-11,
-                    _FIRE_CENTRES,
-                    fire_cycle,
-                ),
-                "CO": _flux(
-                    "Fire carbon monoxide emission flux",
-                    2.0e-9,
-                    _FIRE_CENTRES,
-                    fire_cycle,
-                ),
-                "FRP": Variable(
-                    units="MW",
-                    long_name="Fire radiative power",
-                    background=0.0,
-                    sources=[_src(lon, lat, 10.0, 50.0) for lon, lat in _FIRE_CENTRES],
-                    diurnal=fire_cycle,
-                ),
-            },
-        ),
-        "gmi": Category(
-            file=inventories_dir / "gmi.nc",
-            cadence="monthly",
-            regrid_method="bilinear",
-            grid="gmi",
-            is_3d=True,
-            masked_by="none",
-            variables={
-                "oh": Variable(
-                    units="cm-3",
-                    long_name="Hydroxyl radical number concentration",
-                    background=5.0e5,
-                    sources=[_src(0.0, 0.0, 30.0, 2.0e6)],
-                    seasonal=summer,
-                    vertical=column,
-                ),
-                "h2o2": Variable(
-                    units="mol mol-1",
-                    long_name="Hydrogen peroxide volume mixing ratio",
-                    background=2.0e-10,
-                    sources=[_src(0.0, 10.0, 35.0, 1.5e-9)],
-                    seasonal=summer,
-                    vertical=column,
-                ),
-                "no3": Variable(
-                    units="mol mol-1",
-                    long_name="Nitrate radical volume mixing ratio",
-                    background=1.0e-12,
-                    sources=[_src(20.0, 40.0, 25.0, 2.0e-11)],
-                    seasonal=winter,
-                    vertical=column,
-                ),
-            },
-        ),
-        "dms": Category(
-            file=inventories_dir / "dms.nc",
-            cadence="monthly",
-            regrid_method="bilinear",
-            grid="inventory",
-            is_3d=False,
-            masked_by="ocean",
-            variables={
-                "dms": Variable(
-                    units="nmol L-1",
-                    long_name="Sea surface dimethyl sulfide concentration",
-                    background=1.5,
-                    sources=[
-                        _src(-30.0, 50.0, 20.0, 4.0),
-                        _src(160.0, -45.0, 25.0, 3.0),
-                    ],
-                    seasonal=summer,
-                ),
-            },
-        ),
-        "dust": Category(
-            file=inventories_dir / "dust.nc",
-            cadence="static",
-            regrid_method="bilinear",
-            grid="inventory",
-            is_3d=False,
-            masked_by="land",
-            variables={
-                "clayfrac": Variable(
-                    units="1",
-                    long_name="Clay fraction",
-                    background=0.15,
-                    sources=[_src(10.0, 22.0, 15.0, 0.25)],
-                ),
-                "sandfrac": Variable(
-                    units="1",
-                    long_name="Sand fraction",
-                    background=0.30,
-                    sources=[_src(10.0, 22.0, 15.0, 0.45), _src(45.0, 25.0, 10.0, 0.3)],
-                ),
-                "sep": Variable(
-                    units="1",
-                    long_name="Sediment supply map",
-                    background=0.05,
-                    sources=[_src(10.0, 22.0, 12.0, 0.9), _src(100.0, 40.0, 10.0, 0.7)],
-                ),
-                "uthres": Variable(
-                    units="m s-1",
-                    long_name="Threshold friction velocity",
-                    background=0.35,
-                    sources=[_src(10.0, 22.0, 15.0, 0.2)],
-                ),
-            },
-        ),
-        "fengsha": Category(
-            file=inventories_dir / "fengsha.nc",
-            cadence="monthly",
-            regrid_method="bilinear",
-            grid="inventory",
-            is_3d=False,
-            masked_by="land",
-            variables={
-                "albedo_drag": Variable(
-                    units="1",
-                    long_name="Drag partition",
-                    background=0.2,
-                    sources=[_src(10.0, 22.0, 15.0, 0.5)],
-                    seasonal=winter,
-                ),
-            },
-        ),
-    }
-
-
-def default_land_mask(inventories_dir: Path) -> LandMask:
-    return LandMask(
-        grid="inventory",
-        file=inventories_dir / LANDMASK_FILENAME,
-        continents=[
-            Continent(
-                lon=40.0,
-                lat=25.0,
-                semi_axis_lon=70.0,
-                semi_axis_lat=40.0,
-                rotation_deg=10.0,
-            ),
-            Continent(
-                lon=-80.0,
-                lat=5.0,
-                semi_axis_lon=30.0,
-                semi_axis_lat=60.0,
-                rotation_deg=-20.0,
-            ),
-            Continent(lon=135.0, lat=-25.0, semi_axis_lon=18.0, semi_axis_lat=12.0),
-        ],
-    )
-
-
-def default_met() -> MetParams:
-    return MetParams(
-        surface_pressure_pa=101325.0,
-        temperature_equator_k=300.0,
-        temperature_pole_k=250.0,
-        lapse_rate_k_per_level=0.6,
-        tropopause_level=90,
-        zonal_wind_amplitude_m_s=25.0,
-        pbl_height_m=800.0,
-        soil_moisture=0.25,
-        land_use_class=1,
-        diurnal_amplitude_k=5.0,
-        diurnal_peak_local_hour=14.0,
-    )
+def _rooted(path: Path, out_dir: Path) -> Path:
+    return path if path.is_absolute() else out_dir / path
 
 
 def default_manifest(
@@ -670,26 +417,42 @@ def default_manifest(
     resolution: ResolutionName,
     out_dir: Path,
     command: str,
-    start: datetime = DEFAULT_START,
-    duration_hours: int = 24,
-    step_seconds: int = 720,
-    n_levels: int = 127,
-    inventory_resolution_deg: float = 1.0,
-    source_url: str = EMC_FIX_URL,
+    defaults_file: Path | None = None,
+    start: datetime | None = None,
+    duration_hours: int | None = None,
+    step_seconds: int | None = None,
+    n_levels: int | None = None,
+    inventory_resolution_deg: float | None = None,
+    source_url: str | None = None,
     generated_at: datetime | None = None,
 ) -> Manifest:
-    """The default parameter set for a resolution: catchem_control's clock, 1° inventories, 2.5 x 2 degree gmi."""
-    fix_dir = out_dir / FIX_DIRNAME
-    inv_dir = out_dir / INVENTORIES_DIRNAME
+    """The defaults file (settings `defaults_file` unless given) with the overrides applied and every path rooted under `out_dir`."""
+    settings = get_settings()
+    defaults = ManifestDefaults.from_yaml(defaults_file or settings.defaults_file)
+    overrides = {
+        "start": start,
+        "duration_hours": duration_hours,
+        "step_seconds": step_seconds,
+        "n_levels": n_levels,
+    }
+    clock = Clock.model_validate(
+        defaults.clock.model_dump()
+        | {k: v for k, v in overrides.items() if v is not None}
+    )
+    grids = dict(defaults.grids)
+    if inventory_resolution_deg is not None:
+        grids["inventory"] = inventory_grid(inventory_resolution_deg)
+    fix_dir = out_dir / settings.fix_dirname
     return Manifest(
         generator=GeneratorInfo(
-            version=GENERATOR_VERSION,
-            generated_at=generated_at or datetime.now(tz=start.tzinfo),
+            version=settings.generator_version,
+            generated_at=generated_at or datetime.now(tz=UTC),
             command=command,
         ),
         resolution=resolution,
+        earth_radius_m=defaults.earth_radius_m,
         fix=FixFiles(
-            source_url=source_url.format(resolution=resolution),
+            source_url=(source_url or settings.fix_url).format(resolution=resolution),
             directory=fix_dir,
             mosaic=fix_dir / f"{resolution}_mosaic.nc",
             grid_tiles=[fix_dir / f"{resolution}_grid.tile{t}.nc" for t in range(1, 7)],
@@ -697,24 +460,14 @@ def default_manifest(
                 fix_dir / f"{resolution}_grid_spec.tile{t}.nc" for t in range(1, 7)
             ],
         ),
-        clock=Clock(
-            start=start,
-            duration_hours=duration_hours,
-            step_seconds=step_seconds,
-            n_levels=n_levels,
+        clock=clock,
+        grids=grids,
+        land_mask=defaults.land_mask.model_copy(
+            update={"file": _rooted(defaults.land_mask.file, out_dir)}
         ),
-        grids={
-            "inventory": _grid(inventory_resolution_deg),
-            "gmi": LatLonGrid(
-                dlon=2.5,
-                dlat=2.0,
-                lon_first=-178.75,
-                lat_first=-89.0,
-                nlon=144,
-                nlat=90,
-            ),
+        categories={
+            name: c.model_copy(update={"file": _rooted(c.file, out_dir)})
+            for name, c in defaults.categories.items()
         },
-        land_mask=default_land_mask(inv_dir),
-        categories=default_categories(inv_dir),
-        met=default_met(),
+        met=defaults.met,
     )

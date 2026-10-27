@@ -1,21 +1,19 @@
 """The project logger.
 
 One configuration entry point (`configure`), one handler on stderr, and named children under `protos`
-(`get_logger("fixfiles")` -> `protos.fixfiles`). The tooling logs; it never prints (ruff T20).
+(`get_logger("fixfiles")` -> `protos.fixfiles`). The level and format come from the shared settings
+(`PROTOS_LOG_LEVEL`); the tooling logs, it never prints (ruff T20).
 """
 
 from __future__ import annotations
 
 import logging
-import os
 import sys
 from collections.abc import Iterator
 
+from tools.settings import LogLevel, get_settings
+
 ROOT_NAME = "protos"
-LEVEL_ENV = "PROTOS_LOG_LEVEL"
-DEFAULT_LEVEL = "INFO"
-FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
-LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 
 
 def get_logger(name: str) -> logging.Logger:
@@ -23,23 +21,19 @@ def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(f"{ROOT_NAME}.{name}")
 
 
-def configure(level: str | None = None) -> logging.Logger:
-    """Install the stderr handler once and set the level (argument, else `PROTOS_LOG_LEVEL`, else INFO).
+def configure(level: LogLevel | None = None) -> logging.Logger:
+    """Install the stderr handler once and set the level (`level`, else the settings' `log_level`).
 
     Idempotent: a second call only changes the level, so tests and nested entry points may call it freely.
     """
-    chosen = (level or os.environ.get(LEVEL_ENV) or DEFAULT_LEVEL).upper()
-    if chosen not in LEVELS:
-        raise ValueError(
-            f"unknown log level {chosen!r}; expected one of {', '.join(LEVELS)}"
-        )
+    settings = get_settings()
     root = logging.getLogger(ROOT_NAME)
     if not any(getattr(h, "_protos_handler", False) for h in root.handlers):
         handler = logging.StreamHandler(sys.stderr)
-        handler.setFormatter(logging.Formatter(FORMAT))
+        handler.setFormatter(logging.Formatter(settings.log_format))
         handler._protos_handler = True  # type: ignore[attr-defined]  # marks our handler among any others
         root.addHandler(handler)
-    root.setLevel(chosen)
+    root.setLevel(level or settings.log_level)
     root.propagate = False
     return root
 

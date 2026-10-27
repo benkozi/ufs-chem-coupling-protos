@@ -1,13 +1,16 @@
 """The make_mock_data command line: outputs, exit codes, logging."""
 
 import logging
+import shutil
 from pathlib import Path
 
 import pytest
+import yaml
 
 from tools import fixfiles, log
 from tools import make_mock_data as cli
 from tools import manifest as mf
+from tools.settings import get_settings
 from tools.tests.test_fixfiles import write_fake_set
 
 FAST = ["--inventory-resolution", "10", "--levels", "3"]
@@ -20,7 +23,6 @@ def fake_fetch(monkeypatch: pytest.MonkeyPatch) -> list[mf.FixFiles]:
 
     def fetch(
         fix: mf.FixFiles,
-        *,
         resolution: str,
         n: int,
         radius_m: float,
@@ -49,7 +51,7 @@ def test_success_writes_fix_inventories_and_manifest(
         assert (out / "inventories" / f"{name}.nc").exists()
     assert (out / "inventories" / "landmask.nc").exists()
     assert (out / "inventories" / "totals.yaml").exists()
-    manifest = mf.read_manifest(out / "manifest.yaml")
+    manifest = mf.Manifest.from_yaml(out / "manifest.yaml")
     assert manifest.resolution == "C48"
     assert manifest.clock.n_levels == 3
     assert manifest.grids["inventory"].nlon == 36
@@ -75,7 +77,7 @@ def test_clock_options_reach_the_manifest(
         *FAST,
     ]
     assert cli.main(argv) == 0
-    manifest = mf.read_manifest(out / "manifest.yaml")
+    manifest = mf.Manifest.from_yaml(out / "manifest.yaml")
     assert manifest.clock.duration_hours == 6
     assert manifest.clock.step_seconds == 1800
     assert manifest.clock.n_steps == 12
@@ -169,7 +171,7 @@ def test_fix_url_override_reaches_the_manifest(tmp_path: Path) -> None:
         == 0
     )
     assert (
-        mf.read_manifest(out / "manifest.yaml").fix.source_url
+        mf.Manifest.from_yaml(out / "manifest.yaml").fix.source_url
         == "http://mirror.example/C48/"
     )
 
@@ -180,3 +182,48 @@ def test_unparseable_start_is_a_usage_error(tmp_path: Path) -> None:
             ["--resolution", "C48", "--out", str(tmp_path), "--start", "yesterday"]
         )
     assert exc.value.code == 2
+
+
+@pytest.mark.usefixtures("fake_fetch")
+def test_defaults_option_and_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    custom = tmp_path / "custom.yaml"
+    doc = yaml.safe_load(get_settings().defaults_file.read_text())
+    doc["clock"]["duration_hours"] = 2
+    custom.write_text(yaml.safe_dump(doc))
+    out = tmp_path / "a"
+    assert (
+        cli.main(
+            ["--resolution", "C48", "--out", str(out), "--defaults", str(custom), *FAST]
+        )
+        == 0
+    )
+    assert mf.Manifest.from_yaml(out / "manifest.yaml").clock.duration_hours == 2
+    env_file = tmp_path / "env.yaml"
+    shutil.copy(custom, env_file)
+    monkeypatch.setenv("PROTOS_DEFAULTS", str(env_file))
+    get_settings.cache_clear()
+    out2 = tmp_path / "b"
+    assert cli.main(["--resolution", "C48", "--out", str(out2), *FAST]) == 0
+    assert mf.Manifest.from_yaml(out2 / "manifest.yaml").clock.duration_hours == 2
+
+
+def test_missing_defaults_file_is_a_usage_error(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level(logging.ERROR, logger=log.ROOT_NAME):
+        assert (
+            cli.main(
+                [
+                    "--resolution",
+                    "C48",
+                    "--out",
+                    str(tmp_path),
+                    "--defaults",
+                    str(tmp_path / "nope.yaml"),
+                ]
+            )
+            == 2
+        )
+    assert "nope.yaml" in caplog.text

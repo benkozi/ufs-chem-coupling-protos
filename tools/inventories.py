@@ -16,19 +16,76 @@ from pathlib import Path
 
 import numpy as np
 import xarray as xr
-import yaml
 from numpy.typing import NDArray
 from pydantic import AwareDatetime, Field
 
 from tools import manifest as mf
 from tools.log import get_logger
+from tools.settings import get_settings
 
 log = get_logger("inventories")
 
 Float2D = NDArray[np.float64]
-CONVENTIONS = "CF-1.8"
-DEFLATE: dict[str, object] = {"zlib": True, "complevel": 1, "shuffle": True}
-NO_FILL: dict[str, object] = {"_FillValue": None}
+
+
+class VariableEncoding(mf.Strict):
+    """netCDF4 encoding of a data variable, from the settings' deflate options."""
+
+    zlib: bool = Field(description="Whether the variable is deflated.")
+    complevel: int = Field(description="zlib level, 0-9.", ge=0, le=9)
+    shuffle: bool = Field(description="HDF5 shuffle filter before deflate.")
+
+    @classmethod
+    def from_settings(cls) -> VariableEncoding:
+        settings = get_settings()
+        return cls(
+            zlib=settings.deflate_level > 0,
+            complevel=settings.deflate_level,
+            shuffle=settings.deflate_shuffle,
+        )
+
+    def as_encoding(self) -> dict[str, object]:
+        return self.model_dump()
+
+
+def coordinate_encoding() -> dict[str, object]:
+    """Coordinates, bounds and areas are written without a _FillValue attribute (xarray would add NaN)."""
+    return {"_FillValue": None}
+
+
+class FileAttributes(mf.Strict):
+    """Global attributes of a generated NetCDF file; `None` fields are left out."""
+
+    Conventions: str = Field(
+        description="CF conventions version (settings `cf_conventions`)."
+    )
+    title: str = Field(description="What the file holds.")
+    source: str = Field(
+        default="tools.make_mock_data", description="The generator that wrote the file."
+    )
+    category: str | None = Field(
+        default=None, description="CATChem category name (inventory files)."
+    )
+    cadence: mf.Cadence | None = Field(
+        default=None, description="hourly, monthly or static (inventory files)."
+    )
+    regrid_method: mf.RegridMethod | None = Field(
+        default=None,
+        description="CATChem-style regrid method the prototype assigns (inventory files).",
+    )
+    cece_mapalgo: mf.CeceMapalgo | None = Field(
+        default=None, description="CECE stream mapalgo (inventory files)."
+    )
+    masked_by: mf.MaskedBy | None = Field(
+        default=None, description="land, ocean or none (inventory files)."
+    )
+    resolution: mf.ResolutionName | None = Field(
+        default=None,
+        description="Cubed-sphere resolution of the run (inventory files).",
+    )
+
+    def as_attrs(self) -> dict[str, str]:
+        return {k: str(v) for k, v in self.model_dump(exclude_none=True).items()}
 
 
 class TimeAxis(mf.Strict):
@@ -194,18 +251,19 @@ def write_land_mask(manifest: mf.Manifest) -> Path:
             "flag_meanings": "ocean land",
         },
     )
-    ds.attrs = {
-        "Conventions": CONVENTIONS,
-        "title": "analytic land mask for the coupling prototypes",
-        "source": "tools.make_mock_data",
-    }
+    ds.attrs = FileAttributes(
+        Conventions=get_settings().cf_conventions,
+        title="analytic land mask for the coupling prototypes",
+    ).as_attrs()
     path = manifest.land_mask.file
     path.parent.mkdir(parents=True, exist_ok=True)
-    encoding = {
-        name: dict(NO_FILL) for name in ("lon", "lat", "lon_bnds", "lat_bnds", "area")
+    deflate = VariableEncoding.from_settings().as_encoding()
+    encoding: dict[str, dict[str, object]] = {
+        name: coordinate_encoding()
+        for name in ("lon", "lat", "lon_bnds", "lat_bnds", "area")
     }
-    encoding["land_fraction"] = dict(DEFLATE)
-    encoding["land_mask"] = dict(DEFLATE) | NO_FILL
+    encoding["land_fraction"] = dict(deflate)
+    encoding["land_mask"] = dict(deflate) | coordinate_encoding()
     ds.to_netcdf(path, format="NETCDF4", encoding=encoding)
     log.info(
         "wrote %s (%d x %d, land fraction mean %.3f)",
@@ -387,8 +445,9 @@ def write_category(
         dims = ("time", "lev", "lat", "lon")
     area = cell_area(grid, manifest.earth_radius_m)
     totals: dict[str, VariableTotals] = {}
-    encoding = {
-        n: dict(NO_FILL)
+    deflate = VariableEncoding.from_settings().as_encoding()
+    encoding: dict[str, dict[str, object]] = {
+        n: coordinate_encoding()
         for n in ("lon", "lat", "lon_bnds", "lat_bnds", "area", "time", "time_bnds")
     }
     for var_name, variable in category.variables.items():
@@ -398,7 +457,7 @@ def write_category(
             values,
             {"units": variable.units, "long_name": variable.long_name},
         )
-        encoding[var_name] = dict(DEFLATE)
+        encoding[var_name] = dict(deflate)
         per_level = values.astype(np.float64) * area
         summed = per_level.sum(axis=(-2, -1))
         records = summed if category.is_3d else summed[:, None]
@@ -413,30 +472,20 @@ def write_category(
             records[0].sum(),
             variable.units,
         )
-    ds.attrs = {
-        "Conventions": CONVENTIONS,
-        "title": f"analytic {name} inputs for the coupling prototypes",
-        "source": "tools.make_mock_data",
-        "category": name,
-        "cadence": category.cadence,
-        "regrid_method": category.regrid_method,
-        "cece_mapalgo": category.cece_mapalgo or "",
-        "masked_by": category.masked_by,
-        "resolution": manifest.resolution,
-    }
+    ds.attrs = FileAttributes(
+        Conventions=get_settings().cf_conventions,
+        title=f"analytic {name} inputs for the coupling prototypes",
+        category=name,
+        cadence=category.cadence,
+        regrid_method=category.regrid_method,
+        cece_mapalgo=category.cece_mapalgo,
+        masked_by=category.masked_by,
+        resolution=manifest.resolution,
+    ).as_attrs()
     category.file.parent.mkdir(parents=True, exist_ok=True)
     ds.to_netcdf(category.file, format="NETCDF4", encoding=encoding)
     log.info("wrote %s", category.file)
     return CategoryTotals(file=category.file, variables=totals)
-
-
-def write_totals(totals: Totals, path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(totals.model_dump(mode="json"), sort_keys=False))
-
-
-def read_totals(path: Path) -> Totals:
-    return Totals.model_validate(yaml.safe_load(path.read_text()))
 
 
 def generate_inventories(manifest: mf.Manifest) -> Totals:
@@ -454,5 +503,5 @@ def generate_inventories(manifest: mf.Manifest) -> Totals:
             fraction = fractions[category.grid]
         categories[name] = write_category(manifest, name, fraction)
     totals = Totals(categories=categories)
-    write_totals(totals, manifest.inventories_dir / mf.TOTALS_FILENAME)
+    totals.to_yaml(manifest.inventories_dir / get_settings().totals_filename)
     return totals

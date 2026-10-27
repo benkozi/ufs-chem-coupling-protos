@@ -7,6 +7,8 @@ requires-python = ">=3.12"
 dependencies = [
     # Every structured object in tools/ (configs, manifests, fixtures) is a pydantic model; the mypy plugin below needs it installed.
     "pydantic>=2.0",
+    # Every environment interaction and tunable goes through tools/settings.py (review of PR #4).
+    "pydantic-settings>=2.16",
     # The mock data step (task 2): analytic fields, CF NetCDF output, the YAML manifest.
     "numpy>=2.0",
     "xarray>=2025.1",
@@ -90,6 +92,13 @@ ignore_names = [
     "land_use_class",
     "diurnal_amplitude_k",
     "diurnal_peak_local_hour",
+    # VariableEncoding / FileAttributes fields are consumed through model_dump (netCDF encodings and attributes).
+    "zlib",
+    "complevel",
+    "shuffle",
+    "Conventions",
+    "title",
+    "source",
 ]
 ignore_decorators = [
     "@field_validator",
@@ -101,7 +110,9 @@ ignore_decorators = [
 ]
 
 [tool.yamlfix]
-# Kept coherent with .yamllint.yaml (no document start).
+# Kept coherent with .yamllint.yaml (no document start). preserve_quotes: CATChem's variable name `NO` must stay
+# quoted or YAML 1.1 reads the key as boolean false (tools/defaults/manifest.yaml).
 explicit_start = false
+preserve_quotes = true
 sequence_style = "block_style"
 line_length = 120

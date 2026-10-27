@@ -24,12 +24,9 @@ from pydantic import Field
 
 from tools import manifest as mf
 from tools.log import get_logger
+from tools.settings import get_settings
 
 log = get_logger("fixfiles")
-
-CHUNK = 1 << 20
-TIMEOUT_S = 120
-AREA_TOLERANCE = 0.01
 
 
 class FixFileError(Exception):
@@ -73,11 +70,12 @@ def expected_names(resolution: str) -> list[str]:
 
 
 def fix_files_for(
-    resolution: str, fix_dir: Path, source_url: str = mf.EMC_FIX_URL
+    resolution: str, fix_dir: Path, source_url: str | None = None
 ) -> mf.FixFiles:
     names = expected_names(resolution)
+    url = (source_url or get_settings().fix_url).format(resolution=resolution)
     return mf.FixFiles(
-        source_url=source_url.format(resolution=resolution),
+        source_url=url,
         directory=fix_dir,
         mosaic=fix_dir / names[0],
         grid_tiles=[fix_dir / n for n in names[1:7]],
@@ -102,9 +100,13 @@ def download(url: str, dest: Path, opener: Opener) -> int:
     part = dest.with_name(dest.name + ".part")
     count = 0
     try:
-        with opener(url, timeout=TIMEOUT_S) as response, part.open("wb") as out:
+        settings = get_settings()
+        with (
+            opener(url, timeout=settings.download_timeout_s) as response,
+            part.open("wb") as out,
+        ):
             expected = _content_length(response)
-            while chunk := response.read(CHUNK):
+            while chunk := response.read(settings.download_chunk_bytes):
                 out.write(chunk)
                 count += len(chunk)
     except (urllib.error.URLError, OSError) as exc:
@@ -128,7 +130,6 @@ def _content_length(response: _Response) -> int | None:
 
 def fetch(
     fix: mf.FixFiles,
-    *,
     resolution: str,
     n: int,
     radius_m: float,
@@ -238,9 +239,10 @@ def validate_grid_spec(path: Path, n: int, radius_m: float) -> GridSpecInfo:
         raise FixFileError(f"{path.name}: area has non-finite or non-positive cells")
     total = float(area.sum())
     sixth = 4.0 * math.pi * radius_m**2 / 6.0
-    if abs(total / sixth - 1.0) > AREA_TOLERANCE:
+    tolerance = get_settings().area_tolerance
+    if abs(total / sixth - 1.0) > tolerance:
         raise FixFileError(
-            f"{path.name}: area total {total:.6e} m² differs from a sixth of the sphere {sixth:.6e} m² by more than {AREA_TOLERANCE:.0%}"
+            f"{path.name}: area total {total:.6e} m² differs from a sixth of the sphere {sixth:.6e} m² by more than {tolerance:.0%}"
         )
     return GridSpecInfo(shape=centre, area_total=total)
 

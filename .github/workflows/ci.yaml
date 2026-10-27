@@ -161,6 +161,13 @@ jobs:
           cache-from: |
             type=registry,ref=${{ env.CACHE_REF }}
             type=gha
+      # The three real C48 tile-1 files the validator tests read are downloaded on demand into data/fixtures
+      # (no NetCDF file is committed); cached so only a change to the fetch module re-downloads them.
+      - name: Cache the C48 test fixture files
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: data/fixtures/C48
+          key: fixtures-C48-${{ hashFiles('tools/fixfiles.py') }}
       # Coverage: production code only ([tool.coverage], fail_under); the table in the job summary,
       # the HTML report as an artifact.
       - name: pytest (tools/tests)
