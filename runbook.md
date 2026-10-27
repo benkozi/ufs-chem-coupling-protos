@@ -80,9 +80,9 @@ tools/ci.sh ctest
 | --- | --- |
 | pre-commit | `git config --global --add safe.directory /repo && uv sync --frozen && uv run pre-commit run --all-files` |
 | pytest | `git config --global --add safe.directory /repo && uv sync --frozen && uv run pytest tools/tests --cov --cov-report=term --cov-report=html:coverage-html` |
-| ctest | `cmake -S . -B build && cmake --build build && ctest --test-dir build --output-on-failure -L ci` |
+| ctest | `git config --global --add safe.directory /repo && uv sync --frozen && cmake -S . -B build && cmake --build build && ctest --test-dir build --output-on-failure -L ci` |
 
-`ctest -L ci` runs the two smoke tests in `tests/smoke/`: `mpi_smoke` (2 ranks, expects `ranks=2`) and `esmf_version` (expects `ESMF_VERSION_STRING=8.9.1…`). The `build/` directory on the bind mount is created by the container; it is git-ignored.
+`ctest -L ci` runs the two smoke tests in `tests/smoke/` (`mpi_smoke`, 2 ranks, expects `ranks=2`; `esmf_version`, expects `ESMF_VERSION_STRING=8.9.1…`) and the `make_mock_data` fixture test in `tests/mockdata/` (section 8), which downloads the C48 fix files on first run. The `build/` and `data/` directories on the bind mount are created by the container; both are git-ignored and outside the Docker build context.
 
 On the Mac, outside the container: `uv sync --frozen`, `uv run pre-commit run --all-files`, `uv run pytest tools/tests --cov` (host Python is 3.14 per `.python-version`; the image uses its own 3.12.3).
 
@@ -121,3 +121,231 @@ Two fixes the smoke tests forced: `ESMF_Initialize` takes `logkindflag=` in ESMF
 - **Two netCDF-C installs** in the base image (apt 4.9.2 under `/usr`, spack 4.9.3 in the view; ESMF links the spack one). Spack's netcdf-c installs no CMake package file and apt's does, so a plain `find_package(netCDF CONFIG)` picks apt's regardless of `CMAKE_PREFIX_PATH` (CECE did, in the first task-1 build). The image therefore sets `PKG_CONFIG_PATH` to the view (HELM's AXIS uses pkg-config, `netcdf.pc` → 4.9.3) and CECE is configured with `-DCMAKE_DISABLE_FIND_PACKAGE_netCDF=ON`, which sends CECE to its `NetCDF_ROOT` fallback (the path FindESMF derives from `esmf.mk`) and HELM's AMIO to its `nc-config` fallback (the view's `nc-config`, parallel-enabled). CATChem's own `FindNetCDF.cmake` finds the view directly. Any new CMake project in the image must do the same; check its configure log.
 - **ESMF embeds yaml-cpp**; CECE links spack's shared 0.8.0 and CATChem its vendored symbol-isolated copy. No conflict in separate builds; watch the first single-executable link (task 3/6).
 - **Fork pull requests** run CI with a read-only token: they read the GHCR build cache but cannot write it.
+- **Python 3.14 on the Mac hides annotation errors.** The host interpreter evaluates annotations lazily; the image's 3.12.3 evaluates them at import. Every module under `tools/` therefore starts with `from __future__ import annotations`, and `tools/ci.sh pytest` (3.12) is the check that counts: a subscripted runtime class in an annotation (`netCDF4.Variable[object]`) passed the host suite and failed only in the image (task 2).
+- **`pre-commit run --all-files` sees tracked files only.** On a checkout with new, not yet `git add`ed files the per-file hooks skip them; run the tools directly on new files or stage them first.
+
+## 8. Mock data (task 2)
+
+One offline step produces everything a prototype run needs except meteorology (task 3's MET component computes it analytically at run time) and configuration files (task 5's generator; tasks 3 and 4 use hand-written files under `configs/prescribed/`):
+
+```bash
+uv run python -m tools.make_mock_data --resolution C48 --out data/C48
+```
+
+```bash
+uv run python -m tools.make_mock_data --resolution C96 --out data/C96
+```
+
+Run from the repository root (`python -m`, not the script path: `uv` does not install the project, so `tools.*` is importable only from the root). Inside the image the same command runs through the baked venv as `uv run --no-sync python -m tools.make_mock_data …`.
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--resolution {C48,C96}` | required | C48 for CI, C96 for the prototype |
+| `--out PATH` | required | output directory, git-ignored (`data/`) |
+| `--start ISO8601` | `2021-03-22T06:00:00Z` | run start with timezone (`catchem_control`); naive stamps are a usage error |
+| `--hours N` | `24` | run length |
+| `--step-seconds N` | `720` | coupling step; must divide the run length |
+| `--levels N` | `127` | model levels (`NPZ`); the `lev` size of `gmi.nc` |
+| `--inventory-resolution DEG` | `1.0` | spacing of the 2-D inventory grid; `360/DEG` must be an integer |
+| `--fix-url URL` | the EMC server | directory URL template with `{resolution}` |
+| `--log-level LEVEL` | `$PROTOS_LOG_LEVEL` or `INFO` | logging through `tools/log.py` |
+
+Exit status: 0 on success, 1 when the fetch or the generation fails (logged at `ERROR`, traceback at `DEBUG`), 2 for a usage error.
+
+### Outputs
+
+```
+data/<res>/fix/                      the 13 EMC fix files, unchanged: <res>_mosaic.nc, <res>_grid.tile1-6.nc, <res>_grid_spec.tile1-6.nc
+data/<res>/inventories/anthro.nc     hourly, 25 records: NO SO2 POC TERP ISOP PEC PSO4 (kg m-2 s-1), land-masked
+data/<res>/inventories/fire.nc       hourly, 25 records: NO SO2 CO (kg m-2 s-1), FRP (MW), land-masked
+data/<res>/inventories/gmi.nc        monthly, 12 records x <levels>: oh (cm-3), h2o2, no3 (mol mol-1), unmasked, 2.5 x 2 degree grid
+data/<res>/inventories/dms.nc        monthly, 12 records: dms (nmol L-1), ocean-masked
+data/<res>/inventories/dust.nc       static, 1 record: clayfrac sandfrac sep (1), uthres (m s-1), land-masked
+data/<res>/inventories/fengsha.nc    monthly, 12 records: albedo_drag (1), land-masked
+data/<res>/inventories/landmask.nc   land_fraction (float32, [0,1]) and land_mask (int8) on the inventory grid
+data/<res>/inventories/totals.yaml   sum of field x area per variable, record and level
+data/<res>/manifest.yaml             the run manifest (schema below)
+```
+
+Every inventory file is CF: 1-D `lon`/`lat` centres with `lon_bnds`/`lat_bnds`, `area` in m² (exact spherical cell areas, R = 6371 km), `time` with `time_bnds`, dimension order `(time, [lev,] lat, lon)`, float32 with deflate level 1. Time axes: hourly files carry 25 centred records from the start to start + 24 h inclusive (`hours since <start>`), so a linearly interpolating reader brackets the last step; monthly files carry the 12 mid-month records of the start year with month bounds (`days since <year>-01-01`); static files carry one record at the start. Variable names are CATChem's file variable names (the keys of `CATChem_emission_AQM.yml`). `gmi.nc` levels are `bottom_up` (index 0 at the surface, `lev:positive = "up"`); flip with the manifest's `level_order`. The fields are closed-form (background plus Gaussian sources, a diurnal factor from local solar time for hourly data, a seasonal factor from the record month for monthly data, `exp(-k/H)` over levels for 3-D data, times the land or ocean fraction) with every constant in the manifest and no random numbers, so a run is reproducible from the manifest alone.
+
+### Fix files: source, validation, cache
+
+Source: `https://ftp.emc.ncep.noaa.gov/static_files/public/UFS/GFS/fix/fix_fv3/<res>/` (plain directory listing; files dated October 2016; C48 set 3.7 MB, C96 set 13.8 MB). `tools/fixfiles.py` streams each file to `<name>.part` and renames it only when the byte count equals `Content-Length`; a short read or HTTP error removes the partial file, logs an `ERROR` and the command exits 1. Files that are present and valid are skipped, so a second run is offline. Validation per file mirrors what the consumers read: the mosaic must have `ntiles = 6`, `gridfiles` naming the six tiles and `ncontact = 12`; a `grid` tile must carry a `grid_tile_spec` variable with `projection = cube_gnomonic` and `(2N+1)²` `geographic_longitude`/`geographic_latitude` supergrids (that is how `ESMF_GridCreateMosaic` finds them); a `grid_spec` tile must carry `(N, N)` `grid_lont`/`grid_latt`/`area` and `(N+1, N+1)` `grid_lon`/`grid_lat`, with the tile's area within 1 % of a sixth of the sphere. The mosaic's `gridlocation` is the generating machine's absolute path; the driver passes `tileFilePath=data/<res>/fix/` to ESMF instead.
+
+Local cache: `data/<res>/fix/`. CI: the `ctest` job caches `data/C48/fix` with `actions/cache` under the key `fixfiles-C48-<hash of tools/fixfiles.py>`, so only a change to the fetch module re-downloads.
+
+### Fixture
+
+`tools/tests/fixtures/C48/` holds the real `C48_mosaic.nc` (21,966 B) and `C48_grid_spec.tile1.nc` (66,944 B) as downloaded, and `C48_grid.tile1.nc` re-encoded losslessly (netCDF-4, deflate level 4 with shuffle; 268,053 B instead of 538,966 B, same variables, attributes and values), so every file stays under the 500 KB `check-added-large-files` limit. The tests run the validators on these complete real files and build tiny synthetic tile sets (`n = 4`) for the six-tile and failure cases; the suite never opens a network connection (an autouse fixture makes `urllib.request.urlopen` fail). To regenerate the fixture after a fresh download:
+
+```bash
+nccopy -d 4 -s data/C48/fix/C48_grid.tile1.nc tools/tests/fixtures/C48/C48_grid.tile1.nc
+```
+
+```bash
+cp data/C48/fix/C48_mosaic.nc data/C48/fix/C48_grid_spec.tile1.nc tools/tests/fixtures/C48/
+```
+
+### CTest fixtures
+
+`tests/mockdata/CMakeLists.txt` registers `make_mock_data` (`FIXTURES_SETUP mockdata`, `LABELS ci`, `TIMEOUT 900`) running the C48 generation from the repository root through `uv run --no-sync`, and `make_mock_data_c96` (`FIXTURES_SETUP mockdata_c96`, `LABELS c96`, `TIMEOUT 1800`), which CI never runs. A prototype test declares `FIXTURES_REQUIRED mockdata` and `ctest -R proto_<name>` then generates its own inputs.
+
+### Measured (2026-10-26)
+
+| Run | Time | Output |
+| --- | --- | --- |
+| C96 on the Mac (native arm64, Python 3.14) | 18 s wall (fetch included) | 184 MB: `gmi.nc` 110 MB, `anthro.nc` 34 MB, `fire.nc` 20 MB, `fengsha.nc` 2.9 MB, `dms.nc` 2.3 MB, `dust.nc` 1.4 MB, `landmask.nc` 0.7 MB, fix files 13 MB |
+| C48 inside the image (`tools/ci.sh ctest`, amd64 under emulation on the Mac, cold fix-file download) | 15.5 s for the fixture test cold (fetch included), 5.8 s warm (13 files already present, no connection opened); `tools/ci.sh ctest` as a whole about 30 s | 180 MB: inventories 176 MB (same grids as C96), fix files 3.5 MB |
+
+The inventory grids do not depend on the cubed-sphere resolution, so the C48 and C96 inventories are the same size; only `fix/` differs.
+
+### Manifest schema (`data/<res>/manifest.yaml`, `tools/manifest.py`)
+
+Every model forbids unknown keys and every field is described; `tools.manifest.read_manifest(path)` validates a file and `write_manifest(manifest, path)` writes one. `cece_mapalgo` is derived from `regrid_method` when omitted (`conserve → consd`, `bilinear → bilinear`, `none → passthrough`) and rejected when inconsistent. `met` is read by task 3's MET component and extended there, never by loose keys.
+
+`Manifest`
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `generator` | `GeneratorInfo` | required | Who wrote the manifest and how. |
+| `resolution` | `Literal['C48', 'C96']` | required | Cubed-sphere resolution: C48 (CI) or C96 (prototype default). |
+| `earth_radius_m` | `float` | `6371000.0` | Earth radius used for the inventory cell areas, m (FV3's RADIUS). |
+| `fix` | `FixFiles` | required | The FV3 fix files for the resolution. |
+| `clock` | `Clock` | required | Start, length, step and levels of the run. |
+| `grids` | `dict[str, LatLonGrid]` | required | Named regular lat-lon grids the inventories are written on. |
+| `land_mask` | `LandMask` | required | The analytic land mask. |
+| `categories` | `dict[str, Category]` | required | One entry per CATChem emission category. |
+| `met` | `MetParams` | required | Analytic meteorology parameters for task 3's MET component. |
+
+`GeneratorInfo`
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `version` | `str` | required | Version of the mock data generator that wrote this manifest. |
+| `generated_at` | `pydantic.types.AwareDatetime` | required | UTC time at which the manifest was written. |
+| `command` | `str` | required | The command line that produced this run, for the record. |
+
+`FixFiles`
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `source_url` | `str` | required | Directory URL the fix files were (or would be) downloaded from. |
+| `directory` | `Path` | required | Local directory holding the mosaic and the twelve tile files. |
+| `mosaic` | `Path` | required | Path of the GRIDSPEC mosaic file (<res>_mosaic.nc). |
+| `grid_tiles` | `list[Path]` | required | The six supergrid files <res>_grid.tileN.nc, tile 1 first. |
+| `grid_spec_tiles` | `list[Path]` | required | The six <res>_grid_spec.tileN.nc files with cell centres and areas, tile 1 first. |
+| `sizes` | `dict[str, int]` | `{}` | Byte size of each fix file by file name, recorded after validation. |
+
+`Clock`
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `start` | `pydantic.types.AwareDatetime` | required | Run start (timezone-aware, UTC); the first record of every hourly and static inventory. |
+| `duration_hours` | `int` | required | Run length in hours; hourly inventories cover it inclusively. |
+| `step_seconds` | `int` | required | Coupling step in seconds (DT_ATMOS and coupling_interval_sec in catchem_control). |
+| `n_levels` | `int` | required | Number of model levels (NPZ); the vertical size of 3-D inventories. |
+
+`LatLonGrid`
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `dlon` | `float` | required | Longitude spacing in degrees. |
+| `dlat` | `float` | required | Latitude spacing in degrees. |
+| `lon_first` | `float` | required | Longitude of the first cell centre in degrees east. |
+| `lat_first` | `float` | required | Latitude of the first (southernmost) cell centre in degrees north. |
+| `nlon` | `int` | required | Number of longitude cells; nlon * dlon must be 360. |
+| `nlat` | `int` | required | Number of latitude cells; the outer cell bounds must stay within ±90. |
+
+`LandMask`
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `grid` | `str` | required | Name (in `grids`) of the grid the mask is written on. |
+| `file` | `Path` | required | NetCDF file holding land_fraction and land_mask. |
+| `threshold` | `float` | `0.5` | land_mask = land_fraction >= threshold. |
+| `continents` | `list[Continent]` | required | Super-Gaussian land shapes whose clipped sum is the land fraction. |
+
+`Continent`
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `lon` | `float` | required | Centre longitude of the land shape in degrees east. |
+| `lat` | `float` | required | Centre latitude of the land shape in degrees north. |
+| `semi_axis_lon` | `float` | required | Half-width of the shape along its rotated x axis, in degrees. |
+| `semi_axis_lat` | `float` | required | Half-height of the shape along its rotated y axis, in degrees. |
+| `rotation_deg` | `float` | `0.0` | Counter-clockwise rotation of the shape's axes in degrees. |
+| `exponent` | `float` | `4.0` | Super-Gaussian exponent; larger values give flatter tops and sharper edges. |
+
+`Category`
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `file` | `Path` | required | NetCDF file holding this category's variables. |
+| `cadence` | `Literal['hourly', 'monthly', 'static']` | required | CATChem's `frequency` for the category: hourly, monthly or static. |
+| `regrid_method` | `Literal['conserve', 'bilinear', 'none']` | required | CATChem-style regrid method the prototype assigns to the category. |
+| `cece_mapalgo` | `Literal['consd', 'bilinear', 'passthrough'] | None` | `None` | CECE stream mapalgo; derived from regrid_method when omitted (conserve→consd, bilinear→bilinear, none→passthrough). |
+| `grid` | `str` | required | Name (in `grids`) of the regular lat-lon grid the file is written on. |
+| `is_3d` | `bool` | required | True when the variables carry a `lev` dimension of n_levels. |
+| `level_order` | `Literal['bottom_up', 'top_down']` | `'bottom_up'` | Ordering of the `lev` dimension: bottom_up (index 0 at the surface) or top_down. |
+| `masked_by` | `Literal['land', 'ocean', 'none']` | required | Multiply by the land fraction, the ocean fraction, or nothing. |
+| `variables` | `dict[str, Variable]` | required | Variables by their CATChem file variable name. |
+
+`Variable`
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `units` | `str` | required | CF units string written to the variable (informational: consumers do not convert). |
+| `long_name` | `str` | required | CF long_name written to the variable. |
+| `background` | `float` | required | Value added everywhere (inside the mask) before the Gaussian sources. |
+| `sources` | `list[GaussianSource]` | required | Gaussian sources summed onto the background. |
+| `diurnal` | `Diurnal | None` | `None` | Diurnal cycle applied to hourly data, or null. |
+| `seasonal` | `Seasonal | None` | `None` | Seasonal cycle applied to monthly data, or null. |
+| `vertical` | `Vertical | None` | `None` | Vertical profile for 3-D data, or null. |
+
+`GaussianSource`
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `lon` | `float` | required | Centre longitude of the source in degrees east. |
+| `lat` | `float` | required | Centre latitude of the source in degrees north. |
+| `sigma_deg` | `float` | required | Standard deviation of the Gaussian in degrees (isotropic in lon/lat). |
+| `amplitude` | `float` | required | Peak value of the source in the variable's units before masking and cycles. |
+
+`Diurnal`
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `relative_amplitude` | `float` | required | Relative amplitude d of the factor 1 + d cos(2 pi (t_local - peak) / 24 h). |
+| `peak_local_hour` | `float` | required | Local solar hour of the daily maximum. |
+
+`Seasonal`
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `relative_amplitude` | `float` | required | Relative amplitude s of the factor 1 + s cos(2 pi (month - peak) / 12). |
+| `peak_month` | `int` | required | Calendar month (1-12) of the annual maximum. |
+
+`Vertical`
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `scale_height_levels` | `float` | required | e-folding depth in level units of exp(-k / H), k = 0 at the surface. |
+
+`MetParams`
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `surface_pressure_pa` | `float` | required | Mean sea-level pressure used for the surface pressure field, Pa. |
+| `temperature_equator_k` | `float` | required | Surface air temperature at the equator, K. |
+| `temperature_pole_k` | `float` | required | Surface air temperature at the poles, K. |
+| `lapse_rate_k_per_level` | `float` | required | Temperature decrease per model level below the tropopause, K. |
+| `tropopause_level` | `int` | required | Level index (0 at the surface) above which temperature is held constant. |
+| `zonal_wind_amplitude_m_s` | `float` | required | Peak zonal wind of the analytic jet, m/s. |
+| `pbl_height_m` | `float` | required | Boundary-layer height, m. |
+| `soil_moisture` | `float` | required | Volumetric soil moisture, fraction. |
+| `land_use_class` | `int` | required | Land-use class index reported over land cells. |
+| `diurnal_amplitude_k` | `float` | required | Amplitude of the surface temperature diurnal cycle, K. |
+| `diurnal_peak_local_hour` | `float` | required | Local solar hour of the temperature maximum. |
+
+`totals.yaml` is `tools.inventories.Totals`: `categories.<name>.file` and `categories.<name>.variables.<var>.units` / `.records[record][level]` (one level for 2-D fields), the sum of field times cell area.

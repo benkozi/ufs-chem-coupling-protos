@@ -216,8 +216,20 @@ jobs:
           cache-from: |
             type=registry,ref=${{ env.CACHE_REF }}
             type=gha
-      # MPIEXEC_PREFLAGS for the container come from the image's PROTOS_MPIEXEC_PREFLAGS.
+      # The C48 fix files (3.7 MB from the EMC server) feed the make_mock_data fixture test; the fetch skips
+      # files that are present and valid, so a cache hit means no download. Keyed on the fetch module alone:
+      # an inventory or manifest change does not invalidate the fix files.
+      - name: Cache the C48 fix files
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: data/C48/fix
+          key: fixfiles-C48-${{ hashFiles('tools/fixfiles.py') }}
+      # MPIEXEC_PREFLAGS for the container come from the image's PROTOS_MPIEXEC_PREFLAGS. uv sync is a no-op
+      # against the baked /opt/venv unless the lock changed in this checkout; the fixture test runs `uv run
+      # --no-sync` against it.
       - name: ctest (label ci)
         run: |-
           docker run --rm -v "$GITHUB_WORKSPACE":/repo -w /repo "$CI_IMAGE" \
-            sh -c 'cmake -S . -B build && cmake --build build && ctest --test-dir build --output-on-failure -L ci'
+            sh -c 'git config --global --add safe.directory /repo \
+                   && uv sync --frozen \
+                   && cmake -S . -B build && cmake --build build && ctest --test-dir build --output-on-failure -L ci'

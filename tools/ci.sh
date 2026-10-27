@@ -12,7 +12,7 @@ export BUILDX_BUILDER="${BUILDX_BUILDER:-cloud-bkrlps-cece-builder}"
 
 readonly PRE_COMMIT_CMD='git config --global --add safe.directory /repo && uv sync --frozen && uv run pre-commit run --all-files'
 readonly PYTEST_CMD='git config --global --add safe.directory /repo && uv sync --frozen && uv run pytest tools/tests --cov --cov-report=term --cov-report=html:coverage-html'
-readonly CTEST_CMD='cmake -S . -B build && cmake --build build && ctest --test-dir build --output-on-failure -L ci'
+readonly CTEST_CMD='git config --global --add safe.directory /repo && uv sync --frozen && cmake -S . -B build && cmake --build build && ctest --test-dir build --output-on-failure -L ci'
 
 run_in_image() {
   docker compose run --rm ci sh -c "$1"

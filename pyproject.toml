@@ -7,6 +7,11 @@ requires-python = ">=3.12"
 dependencies = [
     # Every structured object in tools/ (configs, manifests, fixtures) is a pydantic model; the mypy plugin below needs it installed.
     "pydantic>=2.0",
+    # The mock data step (task 2): analytic fields, CF NetCDF output, the YAML manifest.
+    "numpy>=2.0",
+    "xarray>=2025.1",
+    "netcdf4>=1.7",
+    "pyyaml>=6.0",
 ]
 
 [dependency-groups]
@@ -18,6 +23,7 @@ dev = [
     "pytest-cov>=6",
     # The 0.17 family, as in ufs-chem-assay: bumping the family is a change to the code, not to the pin alone.
     "ruff>=0.17,<0.18",
+    "types-pyyaml>=6.0",
     "vulture>=2.16",
     "yamlfix>=1.16",
     "yamllint>=1.35",
@@ -66,7 +72,25 @@ skip = "./design,./extern,./build,./coverage-html,./uv.lock,./.venv,./.git,./.my
 [tool.vulture]
 paths = ["tools"]
 min_confidence = 60
-ignore_names = ["model_config", "pytest_*"]
+# Manifest fields that only later tasks read (task 3's MET component takes `met`/MetParams; `generator.version`
+# is for the record) look unused to vulture, which cannot see pydantic consumers outside this repository.
+ignore_names = [
+    "model_config",
+    "pytest_*",
+    "met",
+    "version",
+    "surface_pressure_pa",
+    "temperature_equator_k",
+    "temperature_pole_k",
+    "lapse_rate_k_per_level",
+    "tropopause_level",
+    "zonal_wind_amplitude_m_s",
+    "pbl_height_m",
+    "soil_moisture",
+    "land_use_class",
+    "diurnal_amplitude_k",
+    "diurnal_peak_local_hour",
+]
 ignore_decorators = [
     "@field_validator",
     "@model_validator",
