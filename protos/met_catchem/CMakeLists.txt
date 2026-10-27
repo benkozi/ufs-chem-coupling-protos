@@ -1,4 +1,4 @@
-# Prototype met_catchem (task 3): the NUOPC driver, the analytic MET provider and CATChem's cap on the
+# Prototype met_catchem: the NUOPC driver, the analytic MET provider and CATChem's cap on the
 # cubed-sphere grid read from the task-2 mosaic. See runbook.md section 9.
 
 add_executable(
@@ -26,20 +26,16 @@ if(NOT STEP_SECONDS MATCHES "^[0-9]+$")
   message(FATAL_ERROR "cannot read clock.step_seconds from tools/defaults/manifest.yaml (got '${_step_line}')")
 endif()
 set(PROTOS_ROOT ${PROJECT_SOURCE_DIR})
-set(_science_template ${PROJECT_SOURCE_DIR}/configs/prescribed/met_catchem/CATChem_new_config.yml.in)
-# The science config (diagnostics on) and the driver configs, one per resolution.
-set(DIAG_ENABLED true)
-set(CATCHEM_CONFIG ${CMAKE_CURRENT_BINARY_DIR}/CATChem_new_config.yml)
-configure_file(${_science_template} ${CATCHEM_CONFIG} @ONLY)
+set(_configs ${PROJECT_SOURCE_DIR}/configs/prescribed/met_catchem)
+# The driver configs, one per resolution, on the prescribed science config (diagnostics on).
+set(CATCHEM_CONFIG ${_configs}/CATChem_new_config.yml)
 set(GRID_SOURCE mosaic)
 foreach(RES IN ITEMS C48 C96)
   configure_file(esm.configure.in ${CMAKE_CURRENT_BINARY_DIR}/esm.${RES}.configure @ONLY)
 endforeach()
 # The file-free debug variant (analytic grid, no CATChem diagnostics) for machines whose amd64 emulation
 # cannot run the image's HDF5 (Rosetta has no x87); never part of ci.
-set(DIAG_ENABLED false)
-set(CATCHEM_CONFIG ${CMAKE_CURRENT_BINARY_DIR}/CATChem_new_config_nodiag.yml)
-configure_file(${_science_template} ${CATCHEM_CONFIG} @ONLY)
+set(CATCHEM_CONFIG ${_configs}/CATChem_new_config_nodiag.yml)
 set(RES C48)
 set(GRID_SOURCE analytic)
 configure_file(esm.configure.in ${CMAKE_CURRENT_BINARY_DIR}/esm.C48.local.configure @ONLY)

@@ -1,0 +1,7 @@
+# fprettify (pre-commit hook, uv-managed): consistent spacing and indentation only. Keyword case, line
+# breaking and declarations are left alone; lines are long by project style (-ffree-line-length-none).
+indent=2
+whitespace=3
+strict-indent=True
+line-length=200
+disable-fypp=True

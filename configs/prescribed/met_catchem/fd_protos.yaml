@@ -6,7 +6,7 @@
 field_dictionary:
   version_number: 0.1
   institution: ufs-chem-coupling-protos
-  description: met_catchem prototype (task 3)
+  description: met_catchem prototype
   entries:
     # 3-D, levels (k = 1 at the surface)
     - standard_name: inst_temp_levels

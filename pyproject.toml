@@ -19,6 +19,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "codespell>=2.4",
+    "fprettify>=0.3.7",
     "mypy>=1.14",
     "pre-commit>=4.0",
     "pytest>=8.0",

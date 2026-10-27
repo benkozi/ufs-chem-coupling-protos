@@ -20,13 +20,14 @@ program esmApp
   type(proto_manifest_type) :: m
   character(len=ESMF_MAXPATHLEN) :: config_file, dictionary, arg
   character(len=32) :: stamp
+  character(len=160) :: summary
   integer(ESMF_KIND_I8) :: steps
   integer :: rc, user_rc, local_pet
 
   call ESMF_Initialize(defaultCalKind=ESMF_CALKIND_GREGORIAN, logkindflag=ESMF_LOGKIND_MULTI, vm=vm, rc=rc)
   if (rc /= ESMF_SUCCESS) error stop "met_catchem: ESMF_Initialize failed"
   call ESMF_VMGet(vm, localPet=local_pet, rc=rc)
-  call check(rc, "ESMF_VMGet")
+  call check(rc, "ESMF_VMGet", __LINE__)
 
   config_file = "esm.configure"
   if (command_argument_count() >= 1) then
@@ -35,7 +36,7 @@ program esmApp
       if (command_argument_count() < 2) call abort_with("usage: esmApp --dump-manifest <manifest.yaml>")
       call get_command_argument(2, arg)
       call manifest_read(trim(arg), m, rc)
-      call check(rc, "reading manifest "//trim(arg))
+      call check(rc, "reading manifest "//trim(arg), __LINE__)
       if (local_pet == 0) call manifest_print(m, 6)
       call ESMF_Finalize(rc=rc)
       stop
@@ -44,49 +45,58 @@ program esmApp
   end if
 
   config = ESMF_ConfigCreate(rc=rc)
-  call check(rc, "ESMF_ConfigCreate")
+  call check(rc, "ESMF_ConfigCreate", __LINE__)
   call ESMF_ConfigLoadFile(config, trim(config_file), rc=rc)
-  call check(rc, "loading driver config "//trim(config_file))
+  call check(rc, "loading driver config "//trim(config_file), __LINE__)
   call ESMF_ConfigGetAttribute(config, dictionary, label="field_dictionary:", rc=rc)
-  call check(rc, "config key 'field_dictionary:' in "//trim(config_file))
+  call check(rc, "config key 'field_dictionary:' in "//trim(config_file), __LINE__)
   call NUOPC_FieldDictionarySetup(trim(dictionary), rc=rc)
-  call check(rc, "NUOPC_FieldDictionarySetup "//trim(dictionary))
+  call check(rc, "NUOPC_FieldDictionarySetup "//trim(dictionary), __LINE__)
 
   driver = ESMF_GridCompCreate(name="met_catchem", config=config, rc=rc)
-  call check(rc, "ESMF_GridCompCreate")
+  call check(rc, "ESMF_GridCompCreate", __LINE__)
   call ESMF_GridCompSetServices(driver, driver_SS, userRc=user_rc, rc=rc)
-  call check(rc, "SetServices"); call check(user_rc, "SetServices (user)")
+  call check(rc, "SetServices", __LINE__); call check(user_rc, "SetServices (user)", __LINE__)
   call ESMF_GridCompInitialize(driver, userRc=user_rc, rc=rc)
-  call check(rc, "Initialize"); call check(user_rc, "Initialize (user)")
+  call check(rc, "Initialize", __LINE__); call check(user_rc, "Initialize (user)", __LINE__)
   call ESMF_GridCompRun(driver, userRc=user_rc, rc=rc)
-  call check(rc, "Run"); call check(user_rc, "Run (user)")
+  call check(rc, "Run", __LINE__); call check(user_rc, "Run (user)", __LINE__)
   call ESMF_GridCompGet(driver, clock=clock, rc=rc)
-  call check(rc, "ESMF_GridCompGet clock")
+  call check(rc, "ESMF_GridCompGet clock", __LINE__)
   call ESMF_ClockGet(clock, advanceCount=steps, currTime=now, rc=rc)
-  call check(rc, "ESMF_ClockGet")
+  call check(rc, "ESMF_ClockGet", __LINE__)
   call ESMF_TimeGet(now, timeString=stamp, rc=rc)
-  call check(rc, "ESMF_TimeGet")
+  call check(rc, "ESMF_TimeGet", __LINE__)
   call ESMF_GridCompFinalize(driver, userRc=user_rc, rc=rc)
-  call check(rc, "Finalize"); call check(user_rc, "Finalize (user)")
+  call check(rc, "Finalize", __LINE__); call check(user_rc, "Finalize (user)", __LINE__)
   call ESMF_GridCompDestroy(driver, rc=rc)
-  call check(rc, "ESMF_GridCompDestroy")
-  if (local_pet == 0) print '(a,i0,a,a)', "met_catchem: completed ", steps, " steps to ", trim(stamp)
+  call check(rc, "ESMF_GridCompDestroy", __LINE__)
+  ! The summary goes to stdout (CTest's pass expression reads it) and to the ESMF log.
+  write (summary, '(a,i0,a,a)') "met_catchem: completed ", steps, " steps to ", trim(stamp)
+  call ESMF_LogWrite(trim(summary), ESMF_LOGMSG_INFO, rc=rc)
+  if (local_pet == 0) print '(a)', trim(summary)
   call ESMF_Finalize(rc=rc)
 
 contains
 
-  subroutine check(code, what)
+  !> A failed call: the message names the call and the line (callers pass __LINE__), the ESMF log carries the
+  !! same line through ESMF_LogFoundError, stdout carries it for CTest and the terminal, then abort.
+  subroutine check(code, what, line)
     integer, intent(in) :: code
     character(len=*), intent(in) :: what
+    integer, intent(in) :: line
+    character(len=16) :: line_text
     if (code == ESMF_SUCCESS) return
-    call abort_with("met_catchem: "//what//" failed (see PET*.ESMF_LogFile)")
+    write (line_text, '(i0)') line
+    if (ESMF_LogFoundError(rcToCheck=code, msg="met_catchem: "//what//" failed", line=line, file=__FILE__)) &
+      call abort_with("met_catchem: "//what//" failed at "//__FILE__//":"//trim(line_text)//" (see PET*.ESMF_LogFile)")
   end subroutine check
 
   subroutine abort_with(msg)
     character(len=*), intent(in) :: msg
     integer :: ignore
     print '(a)', msg
-    flush(6)
+    flush (6)
     call ESMF_LogWrite(msg, ESMF_LOGMSG_ERROR, rc=ignore)
     call ESMF_Finalize(endflag=ESMF_END_ABORT, rc=ignore)
     error stop 1

@@ -117,7 +117,7 @@ contains
     seq = at(node, "continents", rc); if (rc /= ESMF_SUCCESS) return
     n = ESMF_HConfigGetSize(seq, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg="manifest land_mask.continents is not a sequence", line=__LINE__, file=__FILE__)) return
-    allocate(m%continents(n))
+    allocate (m%continents(n))
     do i = 1, n
       item = ESMF_HConfigCreateAt(seq, index=i, rc=rc)
       if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
@@ -170,7 +170,7 @@ contains
       call ESMF_LogSetError(ESMF_RC_ARG_BAD, msg="manifest met.tracers is empty", line=__LINE__, file=__FILE__, rcToReturn=rc)
       return
     end if
-    allocate(m%tracers(n))
+    allocate (m%tracers(n))
     do i = 1, n
       item = ESMF_HConfigCreateAt(seq, index=i, rc=rc)
       if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
@@ -191,51 +191,51 @@ contains
     character(len=32) :: stamp
     integer :: i, rc
     call ESMF_TimeGet(m%start, timeString=stamp, rc=rc)
-    write(unit, '(a,a)') 'resolution=', trim(m%resolution)
-    write(unit, '(a,a)') 'clock.start=', trim(stamp)
-    write(unit, '(a,i0)') 'clock.duration_hours=', m%duration_hours
-    write(unit, '(a,i0)') 'clock.step_seconds=', m%step_seconds
-    write(unit, '(a,i0)') 'clock.n_levels=', m%n_levels
-    write(unit, '(a,a)') 'fix.mosaic=', trim(m%mosaic)
-    write(unit, '(a,a)') 'fix.directory=', trim(m%fix_directory)
-    write(unit, '(a,es12.5)') 'earth_radius_m=', m%earth_radius_m
-    write(unit, '(a,f6.3)') 'land_mask.threshold=', m%land_threshold
+    write (unit, '(a,a)') 'resolution=', trim(m%resolution)
+    write (unit, '(a,a)') 'clock.start=', trim(stamp)
+    write (unit, '(a,i0)') 'clock.duration_hours=', m%duration_hours
+    write (unit, '(a,i0)') 'clock.step_seconds=', m%step_seconds
+    write (unit, '(a,i0)') 'clock.n_levels=', m%n_levels
+    write (unit, '(a,a)') 'fix.mosaic=', trim(m%mosaic)
+    write (unit, '(a,a)') 'fix.directory=', trim(m%fix_directory)
+    write (unit, '(a,es12.5)') 'earth_radius_m=', m%earth_radius_m
+    write (unit, '(a,f6.3)') 'land_mask.threshold=', m%land_threshold
     do i = 1, size(m%continents)
-      write(unit, '(a,i0,a,6(1x,f9.3))') 'land_mask.continents[', i, ']=', m%continents(i)%lon, m%continents(i)%lat, &
+      write (unit, '(a,i0,a,6(1x,f9.3))') 'land_mask.continents[', i, ']=', m%continents(i)%lon, m%continents(i)%lat, &
         m%continents(i)%semi_axis_lon, m%continents(i)%semi_axis_lat, m%continents(i)%rotation_deg, m%continents(i)%exponent
     end do
-    write(unit, '(a,es12.5)') 'met.surface_pressure_pa=', m%surface_pressure_pa
-    write(unit, '(a,f8.3)') 'met.temperature_equator_k=', m%temperature_equator_k
-    write(unit, '(a,f8.3)') 'met.temperature_pole_k=', m%temperature_pole_k
-    write(unit, '(a,f8.3)') 'met.lapse_rate_k_per_level=', m%lapse_rate_k_per_level
-    write(unit, '(a,i0)') 'met.tropopause_level=', m%tropopause_level
-    write(unit, '(a,f8.3)') 'met.zonal_wind_amplitude_m_s=', m%zonal_wind_amplitude_m_s
-    write(unit, '(a,f8.1)') 'met.pbl_height_m=', m%pbl_height_m
-    write(unit, '(a,f8.3)') 'met.soil_moisture=', m%soil_moisture
-    write(unit, '(a,i0)') 'met.land_use_class=', m%land_use_class
-    write(unit, '(a,f8.3)') 'met.diurnal_amplitude_k=', m%diurnal_amplitude_k
-    write(unit, '(a,f8.3)') 'met.diurnal_peak_local_hour=', m%diurnal_peak_local_hour
-    write(unit, '(a,i0)') 'met.n_soil_layers=', m%n_soil_layers
-    write(unit, '(a,f10.3)') 'met.pressure_top_pa=', m%pressure_top_pa
-    write(unit, '(a,f10.3)') 'met.orography_max_m=', m%orography_max_m
-    write(unit, '(a,es12.5)') 'met.specific_humidity_surface=', m%specific_humidity_surface
-    write(unit, '(a,f8.3)') 'met.cloud_fraction_max=', m%cloud_fraction_max
-    write(unit, '(a,f8.3)') 'met.friction_velocity_land_m_s=', m%friction_velocity_land_m_s
-    write(unit, '(a,f8.3)') 'met.friction_velocity_ocean_m_s=', m%friction_velocity_ocean_m_s
-    write(unit, '(a,f8.3)') 'met.roughness_length_land_cm=', m%roughness_length_land_cm
-    write(unit, '(a,f8.3)') 'met.roughness_length_ocean_cm=', m%roughness_length_ocean_cm
-    write(unit, '(a,f8.1)') 'met.shortwave_peak_w_m2=', m%shortwave_peak_w_m2
-    write(unit, '(a,f8.1)') 'met.sensible_heat_peak_w_m2=', m%sensible_heat_peak_w_m2
-    write(unit, '(a,f8.1)') 'met.latent_heat_peak_w_m2=', m%latent_heat_peak_w_m2
-    write(unit, '(a,f8.3)') 'met.aerodynamic_conductance_s_m=', m%aerodynamic_conductance_s_m
-    write(unit, '(a,f8.1)') 'met.canopy_resistance_s_m=', m%canopy_resistance_s_m
-    write(unit, '(a,f8.3)') 'met.leaf_area_index=', m%leaf_area_index
-    write(unit, '(a,f8.3)') 'met.vegetation_fraction=', m%vegetation_fraction
-    write(unit, '(a,f8.1)') 'met.sea_ice_latitude_deg=', m%sea_ice_latitude_deg
-    write(unit, '(a,f8.1)') 'met.snow_latitude_deg=', m%snow_latitude_deg
-    write(unit, '(a,i0)') 'met.soil_type_class=', m%soil_type_class
+    write (unit, '(a,es12.5)') 'met.surface_pressure_pa=', m%surface_pressure_pa
+    write (unit, '(a,f8.3)') 'met.temperature_equator_k=', m%temperature_equator_k
+    write (unit, '(a,f8.3)') 'met.temperature_pole_k=', m%temperature_pole_k
+    write (unit, '(a,f8.3)') 'met.lapse_rate_k_per_level=', m%lapse_rate_k_per_level
+    write (unit, '(a,i0)') 'met.tropopause_level=', m%tropopause_level
+    write (unit, '(a,f8.3)') 'met.zonal_wind_amplitude_m_s=', m%zonal_wind_amplitude_m_s
+    write (unit, '(a,f8.1)') 'met.pbl_height_m=', m%pbl_height_m
+    write (unit, '(a,f8.3)') 'met.soil_moisture=', m%soil_moisture
+    write (unit, '(a,i0)') 'met.land_use_class=', m%land_use_class
+    write (unit, '(a,f8.3)') 'met.diurnal_amplitude_k=', m%diurnal_amplitude_k
+    write (unit, '(a,f8.3)') 'met.diurnal_peak_local_hour=', m%diurnal_peak_local_hour
+    write (unit, '(a,i0)') 'met.n_soil_layers=', m%n_soil_layers
+    write (unit, '(a,f10.3)') 'met.pressure_top_pa=', m%pressure_top_pa
+    write (unit, '(a,f10.3)') 'met.orography_max_m=', m%orography_max_m
+    write (unit, '(a,es12.5)') 'met.specific_humidity_surface=', m%specific_humidity_surface
+    write (unit, '(a,f8.3)') 'met.cloud_fraction_max=', m%cloud_fraction_max
+    write (unit, '(a,f8.3)') 'met.friction_velocity_land_m_s=', m%friction_velocity_land_m_s
+    write (unit, '(a,f8.3)') 'met.friction_velocity_ocean_m_s=', m%friction_velocity_ocean_m_s
+    write (unit, '(a,f8.3)') 'met.roughness_length_land_cm=', m%roughness_length_land_cm
+    write (unit, '(a,f8.3)') 'met.roughness_length_ocean_cm=', m%roughness_length_ocean_cm
+    write (unit, '(a,f8.1)') 'met.shortwave_peak_w_m2=', m%shortwave_peak_w_m2
+    write (unit, '(a,f8.1)') 'met.sensible_heat_peak_w_m2=', m%sensible_heat_peak_w_m2
+    write (unit, '(a,f8.1)') 'met.latent_heat_peak_w_m2=', m%latent_heat_peak_w_m2
+    write (unit, '(a,f8.3)') 'met.aerodynamic_conductance_s_m=', m%aerodynamic_conductance_s_m
+    write (unit, '(a,f8.1)') 'met.canopy_resistance_s_m=', m%canopy_resistance_s_m
+    write (unit, '(a,f8.3)') 'met.leaf_area_index=', m%leaf_area_index
+    write (unit, '(a,f8.3)') 'met.vegetation_fraction=', m%vegetation_fraction
+    write (unit, '(a,f8.1)') 'met.sea_ice_latitude_deg=', m%sea_ice_latitude_deg
+    write (unit, '(a,f8.1)') 'met.snow_latitude_deg=', m%snow_latitude_deg
+    write (unit, '(a,i0)') 'met.soil_type_class=', m%soil_type_class
     do i = 1, size(m%tracers)
-      write(unit, '(a,i0,a,a,1x,a)') 'met.tracers[', i, ']=', trim(m%tracers(i)%name), trim(m%tracers(i)%units)
+      write (unit, '(a,i0,a,a,1x,a)') 'met.tracers[', i, ']=', trim(m%tracers(i)%name), trim(m%tracers(i)%units)
     end do
   end subroutine manifest_print
 

@@ -13,7 +13,7 @@ module proto_met
   use ESMF
   use NUOPC
   use NUOPC_Model, only: modelSS => SetServices, label_Advertise, label_RealizeProvided, label_DataInitialize, &
-    label_Advance, label_CheckImport, label_TimestampExport, label_Finalize, NUOPC_ModelGet
+                         label_Advance, label_CheckImport, label_TimestampExport, label_Finalize, NUOPC_ModelGet
   use catchem_nuopc_interface, only: load_field_config, field_config
   use proto_manifest
   use proto_met_analytic
@@ -40,14 +40,14 @@ module proto_met
     type(proto_manifest_type) :: m
     type(ESMF_Grid) :: grid
     integer :: nx = 0, ny = 0, nz = 0, nsoil = 0, ntr = 0, sphum = 0
-    real(rk), allocatable :: lon(:,:), lat(:,:), area(:,:), land(:,:), oro(:,:)
+    real(rk), allocatable :: lon(:, :), lat(:, :), area(:, :), land(:, :), oro(:, :)
     type(field_spec), allocatable :: exports(:), imports(:)
     type(ESMF_Time) :: step_start
     integer :: step = 0
     ! per-step work arrays (surface and column)
-    real(rk), allocatable :: ts(:,:), ps(:,:), cosz(:,:)
-    real(rk), allocatable :: pedge(:,:,:), pmid(:,:,:), temp(:,:,:), phie(:,:,:), phim(:,:,:)
-    real(rk), allocatable :: u(:,:,:), v(:,:,:), cldf(:,:,:), q(:,:,:)
+    real(rk), allocatable :: ts(:, :), ps(:, :), cosz(:, :)
+    real(rk), allocatable :: pedge(:, :, :), pmid(:, :, :), temp(:, :, :), phie(:, :, :), phim(:, :, :)
+    real(rk), allocatable :: u(:, :, :), v(:, :, :), cldf(:, :, :), q(:, :, :)
   end type met_state
 
   type met_wrap
@@ -87,7 +87,7 @@ contains
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
     call NUOPC_CompSpecialize(model, specLabel=label_Finalize, specRoutine=Finalize, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
-    allocate(wrap%p)
+    allocate (wrap%p)
     call ESMF_UserCompSetInternalState(model, STATE_LABEL, wrap, rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
   end subroutine SetServices
@@ -97,7 +97,7 @@ contains
     integer, intent(out) :: rc
     type(met_state), pointer :: s
     type(met_wrap) :: wrap
-    nullify(s)
+    nullify (s)
     call ESMF_UserCompGetInternalState(model, STATE_LABEL, wrap, rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
     s => wrap%p
@@ -136,7 +136,7 @@ contains
     call load_field_config(trim(cfg_mapping), rc, errmsg)
     if (rc /= 0) then
       call ESMF_LogSetError(ESMF_RC_FILE_READ, msg="MET: field mapping "//trim(cfg_mapping)//": "//trim(errmsg), &
-        line=__LINE__, file=__FILE__, rcToReturn=rc)
+                            line=__LINE__, file=__FILE__, rcToReturn=rc)
       return
     end if
     n = 0
@@ -144,7 +144,7 @@ contains
       if (field_config%import_fields(i)%optional .and. .not. field_config%import_fields(i)%advertise) cycle
       n = n + 1
     end do
-    allocate(s%exports(n), s%imports(field_config%n_export_fields))
+    allocate (s%exports(n), s%imports(field_config%n_export_fields))
     n = 0
     do i = 1, field_config%n_import_fields
       if (field_config%import_fields(i)%optional .and. .not. field_config%import_fields(i)%advertise) cycle
@@ -161,16 +161,16 @@ contains
 
     do i = 1, size(s%exports)
       call NUOPC_Advertise(exportState, StandardName=trim(s%exports(i)%name), name=trim(s%exports(i)%name), &
-        TransferOfferGeomObject="will provide", SharePolicyField="share", SharePolicyGeomObject="share", rc=rc)
+                           TransferOfferGeomObject="will provide", SharePolicyField="share", SharePolicyGeomObject="share", rc=rc)
       if (ESMF_LogFoundError(rcToCheck=rc, msg="MET: advertise export "//trim(s%exports(i)%name), line=__LINE__, file=__FILE__)) return
     end do
     do i = 1, size(s%imports)
       call NUOPC_Advertise(importState, StandardName=trim(s%imports(i)%name), name=trim(s%imports(i)%name), &
-        TransferOfferGeomObject="will provide", SharePolicyField="share", SharePolicyGeomObject="share", rc=rc)
+                           TransferOfferGeomObject="will provide", SharePolicyField="share", SharePolicyGeomObject="share", rc=rc)
       if (ESMF_LogFoundError(rcToCheck=rc, msg="MET: advertise import "//trim(s%imports(i)%name), line=__LINE__, file=__FILE__)) return
     end do
     call ESMF_LogWrite("MET: advertised "//itoa(size(s%exports))//" exports and "//itoa(size(s%imports))// &
-      " imports (CATChem's exports) from "//trim(cfg_mapping), ESMF_LOGMSG_INFO)
+                       " imports (CATChem's exports) from "//trim(cfg_mapping), ESMF_LOGMSG_INFO)
   end subroutine Advertise
 
   subroutine Realize(model, rc)
@@ -180,7 +180,7 @@ contains
     type(ESMF_State) :: importState, exportState
     type(ESMF_Field) :: field, area_field
     type(ESMF_VM) :: vm
-    real(rk), pointer :: p2(:,:)
+    real(rk), pointer :: p2(:, :)
     real(rk) :: area_sum(1), area_total
     integer :: i, j, local_de_count, tile_count
     rc = ESMF_SUCCESS
@@ -193,16 +193,16 @@ contains
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
     if (local_de_count /= 1) then
       call ESMF_LogSetError(ESMF_RC_ARG_BAD, msg="MET: expected one DE per PET, got "//itoa(local_de_count), &
-        line=__LINE__, file=__FILE__, rcToReturn=rc)
+                            line=__LINE__, file=__FILE__, rcToReturn=rc)
       return
     end if
 
     ! centre coordinates (degrees, from the mosaic reader) and the exact cell areas from the corners
-    nullify(p2)
+    nullify (p2)
     call ESMF_GridGetCoord(s%grid, coordDim=1, localDE=0, staggerloc=ESMF_STAGGERLOC_CENTER, farrayPtr=p2, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
     s%lon = p2
-    nullify(p2)
+    nullify (p2)
     call ESMF_GridGetCoord(s%grid, coordDim=2, localDE=0, staggerloc=ESMF_STAGGERLOC_CENTER, farrayPtr=p2, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
     s%lat = p2
@@ -212,7 +212,7 @@ contains
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
     call ESMF_FieldRegridGetArea(area_field, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg="MET: ESMF_FieldRegridGetArea on the mosaic grid", line=__LINE__, file=__FILE__)) return
-    nullify(p2)
+    nullify (p2)
     call ESMF_FieldGet(area_field, farrayPtr=p2, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
     ! ESMF_FieldRegridGetArea returns square radians on a sphere (ESMF_refdoc 27.6.73); the mapping wants m2.
@@ -226,19 +226,19 @@ contains
     call ESMF_VMAllFullReduce(vm, area_sum, area_total, 1, ESMF_REDUCE_SUM, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
     call ESMF_LogWrite("MET: global cell area / (4 pi R^2) = "// &
-      ftoa(area_total / (4.0_rk * PI * s%m%earth_radius_m**2)), ESMF_LOGMSG_INFO)
+                       ftoa(area_total / (4.0_rk * PI * s%m%earth_radius_m**2)), ESMF_LOGMSG_INFO)
 
-    allocate(s%land(s%nx, s%ny), s%oro(s%nx, s%ny))
+    allocate (s%land(s%nx, s%ny), s%oro(s%nx, s%ny))
     do j = 1, s%ny
       do i = 1, s%nx
         s%land(i, j) = land_fraction(s%m, s%lon(i, j), s%lat(i, j))
         s%oro(i, j) = orography(s%m, s%land(i, j), s%lat(i, j))
       end do
     end do
-    allocate(s%ts(s%nx, s%ny), s%ps(s%nx, s%ny), s%cosz(s%nx, s%ny))
-    allocate(s%pedge(s%nx, s%ny, s%nz + 1), s%phie(s%nx, s%ny, s%nz + 1))
-    allocate(s%pmid(s%nx, s%ny, s%nz), s%temp(s%nx, s%ny, s%nz), s%phim(s%nx, s%ny, s%nz), &
-      s%u(s%nx, s%ny, s%nz), s%v(s%nx, s%ny, s%nz), s%cldf(s%nx, s%ny, s%nz), s%q(s%nx, s%ny, s%nz))
+    allocate (s%ts(s%nx, s%ny), s%ps(s%nx, s%ny), s%cosz(s%nx, s%ny))
+    allocate (s%pedge(s%nx, s%ny, s%nz + 1), s%phie(s%nx, s%ny, s%nz + 1))
+    allocate (s%pmid(s%nx, s%ny, s%nz), s%temp(s%nx, s%ny, s%nz), s%phim(s%nx, s%ny, s%nz), &
+              s%u(s%nx, s%ny, s%nz), s%v(s%nx, s%ny, s%nz), s%cldf(s%nx, s%ny, s%nz), s%q(s%nx, s%ny, s%nz))
 
     do i = 1, size(s%exports)
       field = create_field(s, s%exports(i), rc); if (rc /= ESMF_SUCCESS) return
@@ -251,8 +251,8 @@ contains
       if (ESMF_LogFoundError(rcToCheck=rc, msg="MET: realize import "//trim(s%imports(i)%name), line=__LINE__, file=__FILE__)) return
     end do
     call ESMF_LogWrite("MET: realized "//itoa(size(s%exports))//" exports and "//itoa(size(s%imports))// &
-      " imports on a "//itoa(tile_count)//"-tile grid, local DE "//itoa(s%nx)//"x"//itoa(s%ny)// &
-      ", nz="//itoa(s%nz)//", nsoil="//itoa(s%nsoil)//", ntracers="//itoa(s%ntr), ESMF_LOGMSG_INFO)
+                       " imports on a "//itoa(tile_count)//"-tile grid, local DE "//itoa(s%nx)//"x"//itoa(s%ny)// &
+                       ", nz="//itoa(s%nz)//", nsoil="//itoa(s%nsoil)//", ntracers="//itoa(s%ntr), ESMF_LOGMSG_INFO)
   end subroutine Realize
 
   !> One field of the mapping's shape: 2-D at centre, 3-D with the axis' extent, rank 4 with the tracer metadata.
@@ -264,14 +264,14 @@ contains
     type(ESMF_Array) :: array
     type(ESMF_Info) :: info
     character(len=TRACER_NAME_LEN), allocatable :: names(:), units(:)
-    real(rk), pointer :: p2(:,:), p3(:,:,:), p4(:,:,:,:)
+    real(rk), pointer :: p2(:, :), p3(:, :, :), p4(:, :, :, :)
     integer :: nlev, i
     rc = ESMF_SUCCESS
     select case (spec%rank)
     case (2)
       field = ESMF_FieldCreate(s%grid, typekind=ESMF_TYPEKIND_R8, staggerloc=ESMF_STAGGERLOC_CENTER, name=trim(spec%name), rc=rc)
       if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
-      nullify(p2); call ESMF_FieldGet(field, farrayPtr=p2, rc=rc)
+      nullify (p2); call ESMF_FieldGet(field, farrayPtr=p2, rc=rc)
       if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
       p2 = 0.0_rk
     case (3)
@@ -284,20 +284,20 @@ contains
         nlev = s%nz
       end select
       field = ESMF_FieldCreate(s%grid, typekind=ESMF_TYPEKIND_R8, staggerloc=ESMF_STAGGERLOC_CENTER, &
-        ungriddedLBound=(/1/), ungriddedUBound=(/nlev/), name=trim(spec%name), rc=rc)
+                               ungriddedLBound=(/1/), ungriddedUBound=(/nlev/), name=trim(spec%name), rc=rc)
       if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
-      nullify(p3); call ESMF_FieldGet(field, farrayPtr=p3, rc=rc)
+      nullify (p3); call ESMF_FieldGet(field, farrayPtr=p3, rc=rc)
       if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
       p3 = 0.0_rk
     case (4)
       field = ESMF_FieldCreate(s%grid, typekind=ESMF_TYPEKIND_R8, staggerloc=ESMF_STAGGERLOC_CENTER, &
-        ungriddedLBound=(/1, 1/), ungriddedUBound=(/s%nz, s%ntr/), name=trim(spec%name), rc=rc)
+                               ungriddedLBound=(/1, 1/), ungriddedUBound=(/s%nz, s%ntr/), name=trim(spec%name), rc=rc)
       if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
-      nullify(p4); call ESMF_FieldGet(field, farrayPtr=p4, rc=rc)
+      nullify (p4); call ESMF_FieldGet(field, farrayPtr=p4, rc=rc)
       if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
       p4 = 0.0_rk
       ! The two keys the CATChem cap (and GOCART) read from the Array's Info, as the FV3 cap sets them.
-      allocate(names(s%ntr), units(s%ntr))
+      allocate (names(s%ntr), units(s%ntr))
       do i = 1, s%ntr
         names(i) = s%m%tracers(i)%name
         units(i) = s%m%tracers(i)%units
@@ -347,7 +347,7 @@ contains
       if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
       if (trim(share_field) == "shared") n_shared = n_shared + 1
       call ESMF_LogWrite("MET: export "//trim(s%exports(i)%name)//" ShareStatusField="//trim(share_field)// &
-        " ShareStatusGeomObject="//trim(share_geom), ESMF_LOGMSG_INFO)
+                         " ShareStatusGeomObject="//trim(share_geom), ESMF_LOGMSG_INFO)
     end do
     call ESMF_LogWrite("MET: "//itoa(n_shared)//" of "//itoa(size(s%exports))//" exports are reference-shared", ESMF_LOGMSG_INFO)
     call NUOPC_CompAttributeSet(model, name="InitializeDataComplete", value="true", rc=rc)
@@ -371,7 +371,7 @@ contains
     type(ESMF_Clock) :: clock
     type(ESMF_Time) :: now
     type(ESMF_Field) :: fin, fout
-    real(rk), pointer :: tin(:,:,:,:), tout(:,:,:,:)
+    real(rk), pointer :: tin(:, :, :, :), tout(:, :, :, :)
     character(len=32) :: stamp
     integer :: j
     rc = ESMF_SUCCESS
@@ -387,7 +387,7 @@ contains
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
     call ESMF_StateGet(exportState, itemName=TRACER_FIELD, field=fout, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
-    nullify(tin, tout)
+    nullify (tin, tout)
     call ESMF_FieldGet(fin, farrayPtr=tin, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
     call ESMF_FieldGet(fout, farrayPtr=tout, rc=rc)
@@ -401,7 +401,7 @@ contains
       call ESMF_TimeGet(now, timeString=stamp, rc=rc)
       if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
       call ESMF_LogWrite("MET: step "//itoa(s%step)//" at "//trim(stamp)//": Ts(1,1)="//ftoa(s%ts(1, 1))// &
-        " K, ps(1,1)="//ftoa(s%ps(1, 1))//" Pa, seas1 max="//ftoa(maxval(tout(:, :, :, min(2, s%ntr)))), ESMF_LOGMSG_INFO)
+                         " K, ps(1,1)="//ftoa(s%ps(1, 1))//" Pa, seas1 max="//ftoa(maxval(tout(:, :, :, min(2, s%ntr)))), ESMF_LOGMSG_INFO)
     end if
   end subroutine Advance
 
@@ -427,7 +427,7 @@ contains
     rc = ESMF_SUCCESS
     s => state_of(model, rc); if (rc /= ESMF_SUCCESS) return
     call ESMF_LogWrite("MET: finalize after "//itoa(s%step)//" steps", ESMF_LOGMSG_INFO)
-    deallocate(s)
+    deallocate (s)
   end subroutine Finalize
 
   ! --- the analytic fill -------------------------------------------------------------------------------------
@@ -438,7 +438,7 @@ contains
     type(ESMF_Time), intent(in) :: time
     integer, intent(out) :: rc
     type(ESMF_Field) :: field
-    real(rk), pointer :: p2(:,:), p3(:,:,:), p4(:,:,:,:)
+    real(rk), pointer :: p2(:, :), p3(:, :, :), p4(:, :, :, :)
     real(rk) :: hour_utc, hloc, hour
     integer :: doy, hh, mm, ss, i, j, k, n
 
@@ -455,8 +455,8 @@ contains
         s%ts(i, j) = surface_temperature(s%m, s%lat(i, j), hloc)
         s%ps(i, j) = surface_pressure(s%m, s%oro(i, j))
         call column(s%m, s%nz, s%ps(i, j), s%ts(i, j), s%oro(i, j), s%lon(i, j), s%lat(i, j), &
-          s%pedge(i, j, :), s%pmid(i, j, :), s%temp(i, j, :), s%phie(i, j, :), s%phim(i, j, :), &
-          s%u(i, j, :), s%v(i, j, :), s%cldf(i, j, :), s%q(i, j, :))
+                    s%pedge(i, j, :), s%pmid(i, j, :), s%temp(i, j, :), s%phie(i, j, :), s%phim(i, j, :), &
+                    s%u(i, j, :), s%v(i, j, :), s%cldf(i, j, :), s%q(i, j, :))
       end do
     end do
 
@@ -465,19 +465,19 @@ contains
       if (ESMF_LogFoundError(rcToCheck=rc, msg="MET: export "//trim(s%exports(n)%name)//" missing", line=__LINE__, file=__FILE__)) return
       select case (s%exports(n)%rank)
       case (2)
-        nullify(p2); call ESMF_FieldGet(field, farrayPtr=p2, rc=rc)
+        nullify (p2); call ESMF_FieldGet(field, farrayPtr=p2, rc=rc)
         if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
         call fill_2d(s, trim(s%exports(n)%name), p2, rc); if (rc /= ESMF_SUCCESS) return
       case (3)
-        nullify(p3); call ESMF_FieldGet(field, farrayPtr=p3, rc=rc)
+        nullify (p3); call ESMF_FieldGet(field, farrayPtr=p3, rc=rc)
         if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
         call fill_3d(s, trim(s%exports(n)%name), p3, rc); if (rc /= ESMF_SUCCESS) return
       case (4)
-        nullify(p4); call ESMF_FieldGet(field, farrayPtr=p4, rc=rc)
+        nullify (p4); call ESMF_FieldGet(field, farrayPtr=p4, rc=rc)
         if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
         if (trim(s%exports(n)%name) /= TRACER_FIELD) then
           call ESMF_LogSetError(ESMF_RC_ARG_BAD, msg="MET: no analytic recipe for rank-4 export "//trim(s%exports(n)%name), &
-            line=__LINE__, file=__FILE__, rcToReturn=rc)
+                                line=__LINE__, file=__FILE__, rcToReturn=rc)
           return
         end if
         do k = 1, s%nz
@@ -490,7 +490,7 @@ contains
   subroutine fill_2d(s, name, p, rc)
     type(met_state), intent(in) :: s
     character(len=*), intent(in) :: name
-    real(rk), intent(inout) :: p(:,:)
+    real(rk), intent(inout) :: p(:, :)
     integer, intent(out) :: rc
     real(rk) :: day(s%nx, s%ny)
     logical :: is_land(s%nx, s%ny)
@@ -558,7 +558,7 @@ contains
   subroutine fill_3d(s, name, p, rc)
     type(met_state), intent(in) :: s
     character(len=*), intent(in) :: name
-    real(rk), intent(inout) :: p(:,:,:)
+    real(rk), intent(inout) :: p(:, :, :)
     integer, intent(out) :: rc
     integer :: k
     rc = ESMF_SUCCESS
@@ -609,7 +609,7 @@ contains
     integer, intent(in) :: i
     character(len=:), allocatable :: text
     character(len=16) :: buffer
-    write(buffer, '(i0)') i
+    write (buffer, '(i0)') i
     text = trim(buffer)
   end function itoa
 
@@ -617,7 +617,7 @@ contains
     real(rk), intent(in) :: x
     character(len=:), allocatable :: text
     character(len=24) :: buffer
-    write(buffer, '(es12.4)') x
+    write (buffer, '(es12.4)') x
     text = trim(adjustl(buffer))
   end function ftoa
 

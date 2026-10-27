@@ -8,7 +8,7 @@ module proto_driver
   use ESMF
   use NUOPC
   use NUOPC_Driver, only: driverSS => SetServices, label_SetModelServices, label_SetRunSequence, &
-    NUOPC_DriverAddComp, NUOPC_DriverIngestRunSequence, NUOPC_DriverPrint
+                          NUOPC_DriverAddComp, NUOPC_DriverIngestRunSequence, NUOPC_DriverPrint
   use cc_nuopc, only: catchem_SS => SetServices, catchem_SV => SetVM, cc_nuopc_set_config_file, cc_nuopc_set_field_mapping_file
   use proto_met, only: met_SS => SetServices, proto_met_configure
   use proto_manifest
@@ -85,7 +85,7 @@ contains
 
     ! --- the PET rule: six tiles, one DE per PET ---
     if (mod(pet_count, N_TILES) /= 0) then
-      write(msg, '(a,i0,a)') "met_catchem: PET count ", pet_count, " must be a multiple of 6 (one DE per PET on six tiles)"
+      write (msg, '(a,i0,a)') "met_catchem: PET count ", pet_count, " must be a multiple of 6 (one DE per PET on six tiles)"
       call fail(local_pet, trim(msg), rc)
       return
     end if
@@ -94,7 +94,7 @@ contains
       call ESMF_ConfigGetAttribute(config, decomp, count=2, label="regdecomp_per_tile:", rc=rc)
       if (ESMF_LogFoundError(rcToCheck=rc, msg="config key 'regdecomp_per_tile:' needs two integers", line=__LINE__, file=__FILE__)) return
       if (decomp(1) * decomp(2) /= per_tile) then
-        write(msg, '(a,i0,a,i0,a,i0,a)') "met_catchem: regdecomp_per_tile ", decomp(1), " x ", decomp(2), &
+        write (msg, '(a,i0,a,i0,a,i0,a)') "met_catchem: regdecomp_per_tile ", decomp(1), " x ", decomp(2), &
           " must equal the PET count per tile ", per_tile, " (one DE per PET)"
         call fail(local_pet, trim(msg), rc)
         return
@@ -115,19 +115,19 @@ contains
       mosaic = join_path(trim(data_root), trim(m%mosaic))
       fix_dir = join_path(trim(data_root), trim(m%fix_directory))//'/'
       grid = ESMF_GridCreateMosaic(filename=mosaic, regDecompPTile=reg_decomp, tileFilePath=fix_dir, &
-        staggerLocList=(/ESMF_STAGGERLOC_CENTER, ESMF_STAGGERLOC_CORNER/), name=trim(m%resolution), rc=rc)
+                                   staggerLocList=(/ESMF_STAGGERLOC_CENTER, ESMF_STAGGERLOC_CORNER/), name=trim(m%resolution), rc=rc)
       if (ESMF_LogFoundError(rcToCheck=rc, msg="driver: ESMF_GridCreateMosaic "//mosaic, line=__LINE__, file=__FILE__)) return
     case ("analytic")
-      read(m%resolution(2:), *, iostat=t) tile_size
+      read (m%resolution(2:), *, iostat=t) tile_size
       if (t /= 0 .or. tile_size <= 0) then
         call fail(local_pet, "met_catchem: cannot read the tile size from resolution '"//trim(m%resolution)//"'", rc)
         return
       end if
       grid = ESMF_GridCreateCubedSphere(tileSize=tile_size, regDecompPTile=reg_decomp, coordSys=ESMF_COORDSYS_SPH_DEG, &
-        staggerLocList=(/ESMF_STAGGERLOC_CENTER, ESMF_STAGGERLOC_CORNER/), name=trim(m%resolution)//"_analytic", rc=rc)
+                                        staggerLocList=(/ESMF_STAGGERLOC_CENTER, ESMF_STAGGERLOC_CORNER/), name=trim(m%resolution)//"_analytic", rc=rc)
       if (ESMF_LogFoundError(rcToCheck=rc, msg="driver: ESMF_GridCreateCubedSphere", line=__LINE__, file=__FILE__)) return
       call ESMF_LogWrite("driver: grid_source analytic (ESMF_GridCreateCubedSphere, debug mode; the prototype's grid is the mosaic)", &
-        ESMF_LOGMSG_WARNING)
+                         ESMF_LOGMSG_WARNING)
     case default
       call fail(local_pet, "met_catchem: grid_source must be mosaic or analytic, got '"//trim(grid_source)//"'", rc)
       return
@@ -135,11 +135,11 @@ contains
     call ESMF_GridGet(grid, localDECount=local_de_count, tileCount=tile_count, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
     if (local_de_count /= 1) then
-      write(msg, '(a,i0,a,i0,a)') "met_catchem: PET ", local_pet, " holds ", local_de_count, " DEs; exactly one is required"
+      write (msg, '(a,i0,a,i0,a)') "met_catchem: PET ", local_pet, " holds ", local_de_count, " DEs; exactly one is required"
       call fail(local_pet, trim(msg), rc)
       return
     end if
-    write(msg, '(a,a,a,i0,a,i0,a,i0,a,i0,a)') "driver: grid ", trim(m%resolution), " tileCount=", tile_count, &
+    write (msg, '(a,a,a,i0,a,i0,a,i0,a,i0,a)') "driver: grid ", trim(m%resolution), " tileCount=", tile_count, &
       " regDecompPTile=", decomp(1), "x", decomp(2), " per tile, petCount=", pet_count, ", one DE per PET"
     call ESMF_LogWrite(trim(msg), ESMF_LOGMSG_INFO)
     if (local_pet == 0) print '(a)', trim(msg)
@@ -187,16 +187,16 @@ contains
     if (ESMF_LogFoundError(rcToCheck=rc, msg="config key '"//prefix//"_petlist_bounds:'", line=__LINE__, file=__FILE__)) return
     if (bounds(1) < 0) bounds = (/0, pet_count - 1/)
     if (bounds(2) >= pet_count .or. bounds(1) > bounds(2)) then
-      write(msg, '(a,a,a,i0,1x,i0,a,i0,a)') "met_catchem: ", prefix, "_petlist_bounds ", bounds(1), bounds(2), &
+      write (msg, '(a,a,a,i0,1x,i0,a,i0,a)') "met_catchem: ", prefix, "_petlist_bounds ", bounds(1), bounds(2), &
         " outside 0..", pet_count - 1, ""
       call ESMF_LogSetError(ESMF_RC_ARG_BAD, msg=trim(msg), line=__LINE__, file=__FILE__, rcToReturn=rc)
       return
     end if
-    allocate(pet_list(bounds(2) - bounds(1) + 1))
+    allocate (pet_list(bounds(2) - bounds(1) + 1))
     pet_list = (/(i, i=bounds(1), bounds(2))/)
     if (present(set_vm)) then
       call NUOPC_DriverAddComp(driver, prefix, compSetServicesRoutine=set_services, compSetVMRoutine=set_vm, &
-        petList=pet_list, comp=comp, rc=rc)
+                               petList=pet_list, comp=comp, rc=rc)
     else
       call NUOPC_DriverAddComp(driver, prefix, compSetServicesRoutine=set_services, petList=pet_list, comp=comp, rc=rc)
     end if
@@ -207,7 +207,7 @@ contains
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
     call NUOPC_FreeFormatDestroy(attributes, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
-    write(msg, '(a,a,a,i0,a,i0)') "driver: added ", prefix, " on PETs ", bounds(1), "..", bounds(2)
+    write (msg, '(a,a,a,i0,a,i0)') "driver: added ", prefix, " on PETs ", bounds(1), "..", bounds(2)
     call ESMF_LogWrite(trim(msg), ESMF_LOGMSG_INFO)
   end subroutine add_component
 
@@ -236,7 +236,7 @@ contains
     integer, intent(out) :: rc
     if (local_pet == 0) then
       print '(a)', msg
-      flush(6)
+      flush (6)
     end if
     call ESMF_LogSetError(ESMF_RC_ARG_BAD, msg=msg, line=__LINE__, file=__FILE__, rcToReturn=rc)
   end subroutine fail

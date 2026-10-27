@@ -16,7 +16,7 @@ module proto_met_analytic
   real(rk), parameter, public :: DECLINATION_MAX_DEG = 23.44_rk
 
   public :: wrap_degrees, land_fraction, local_solar_hour, cos_zenith, surface_temperature, orography, &
-    surface_pressure, column
+            surface_pressure, column
 
 contains
 
@@ -71,7 +71,7 @@ contains
     real(rk), intent(in) :: lat, hour_local
     real(rk) :: t
     t = m%temperature_pole_k + (m%temperature_equator_k - m%temperature_pole_k) * cos(lat * DEG2RAD)**2 &
-      + m%diurnal_amplitude_k * cos(2.0_rk * PI * (hour_local - m%diurnal_peak_local_hour) / 24.0_rk)
+        + m%diurnal_amplitude_k * cos(2.0_rk * PI * (hour_local - m%diurnal_peak_local_hour) / 24.0_rk)
   end function surface_temperature
 
   !> Surface height, m: the land fraction times cos^2 latitude, scaled to the manifest's peak.
