@@ -1,7 +1,7 @@
 [submodule "extern/CATChem"]
 	path = extern/CATChem
-	url = https://github.com/bbakernoaa/CATChem.git
-	branch = feature/rework
+	url = https://github.com/benkozi/CATChem.git
+	branch = feature/cece-coupling-proto
 [submodule "extern/CECE"]
 	path = extern/CECE
 	url = https://github.com/benkozi/CECE.git
