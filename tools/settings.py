@@ -118,6 +118,67 @@ class Settings(BaseSettings):
         ge=1,
     )
 
+    # config generation (task 5). Relative paths are relative to the repository root.
+    gen_defaults_file: Path = Field(
+        default=Path("tools/defaults/gen_configs.yaml"),
+        description="YAML file with the config generator's parameter set (PROTOS_GEN_DEFAULTS); --defaults wins when given.",
+        validation_alias="PROTOS_GEN_DEFAULTS",
+    )
+    catchem_field_mapping: Path = Field(
+        default=Path("extern/CATChem/drivers/nuopc/CATChem_field_mapping.yml"),
+        description="The CATChem field mapping the generator extends with the emission import entries.",
+    )
+    catchem_species_file: Path = Field(
+        default=Path("extern/CATChem/tests/Configs/Default/CATChem_species.yml"),
+        description="The CATChem species file the emitted science config names; emission-map targets must be in it or be MET_* inputs.",
+    )
+    base_field_dictionary: Path = Field(
+        default=Path("configs/prescribed/met_catchem/fd_protos.yaml"),
+        description="The NUOPC field dictionary the generator extends with the emission standard names.",
+    )
+    cece_validator: Path = Field(
+        default=Path("extern/CECE/scripts/validate_cece_config.py"),
+        description="CECE's configuration validator; the generator runs it on the emitted CECE YAML when the file exists.",
+    )
+    n_tiles: int = Field(
+        default=6,
+        description="Tiles of the cubed-sphere grid; the PET count must be a multiple of it (one DE per PET).",
+        gt=0,
+    )
+    standard_name_prefix: str = Field(
+        default="extemis",
+        description="Prefix of the emission standard names (<prefix>_<category>_<variable>) and of the CATChem mapping paths (<prefix>/<category>/<variable>).",
+        min_length=1,
+    )
+    cece_config_filename: str = Field(
+        default="cece.yaml",
+        description="Name of the emitted CECE configuration under --out.",
+    )
+    field_dictionary_filename: str = Field(
+        default="fd.yaml",
+        description="Name of the emitted NUOPC field dictionary under --out.",
+    )
+    catchem_config_filename: str = Field(
+        default="CATChem_new_config.yml",
+        description="Name of the emitted CATChem science configuration under --out.",
+    )
+    catchem_emission_filename: str = Field(
+        default="CATChem_emission.yml",
+        description="Name of the emitted CATChem emission map under --out.",
+    )
+    catchem_mapping_filename: str = Field(
+        default="CATChem_field_mapping.yml",
+        description="Name of the emitted CATChem field mapping under --out.",
+    )
+    driver_config_filename: str = Field(
+        default="esm.configure",
+        description="Name of the emitted driver configuration under --out.",
+    )
+    gen_record_filename: str = Field(
+        default="gen_configs_manifest.yaml",
+        description="Name of the record the generator writes under --out (what was generated from which manifest).",
+    )
+
     # tests
     fixture_dir: Path = Field(
         default=Path("data/fixtures/C48"),

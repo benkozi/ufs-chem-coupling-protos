@@ -1,9 +1,9 @@
 # NUOPC field dictionary of the met_catchem prototype: every import of extern/CATChem/drivers/nuopc/
 # CATChem_field_mapping.yml, CATChem's five exports, the one alias the UFS-pinned CATChem needs, and the
-# emission standard names CECE exports (task 4 onwards). Loaded by
+# emission standard names CECE exports. Loaded by
 # esmApp with NUOPC_FieldDictionarySetup before the driver exists. Canonical units are CF strings (ufs-weather-
 # model's fd_ufs.yaml where it has a value); no component passes Units at advertise, so they are not compared
-# with anything at run time. Task 5's generator extends a copy of this file with the emission field names.
+# with anything at run time. tools/gen_configs.py emits the same dictionary from a manifest.
 field_dictionary:
   version_number: 0.1
   institution: ufs-chem-coupling-protos
@@ -108,6 +108,45 @@ field_dictionary:
       canonical_units: min-1
     - standard_name: inst_tracer_diag_jno2
       canonical_units: min-1
-    # CECE emission exports (task 4; task 5's generator adds the other categories and species)
-    - standard_name: NO_emission_flux
+    # CECE emission exports, extemis_<category>_<variable>, one per gridded variable of the manifest; the
+    # generator (tools/gen_configs.py) writes the same list from the manifest it is given.
+    - standard_name: extemis_anthro_NO
       canonical_units: kg m-2 s-1
+    - standard_name: extemis_anthro_SO2
+      canonical_units: kg m-2 s-1
+    - standard_name: extemis_anthro_POC
+      canonical_units: kg m-2 s-1
+    - standard_name: extemis_anthro_TERP
+      canonical_units: kg m-2 s-1
+    - standard_name: extemis_anthro_ISOP
+      canonical_units: kg m-2 s-1
+    - standard_name: extemis_anthro_PEC
+      canonical_units: kg m-2 s-1
+    - standard_name: extemis_anthro_PSO4
+      canonical_units: kg m-2 s-1
+    - standard_name: extemis_fire_NO
+      canonical_units: kg m-2 s-1
+    - standard_name: extemis_fire_SO2
+      canonical_units: kg m-2 s-1
+    - standard_name: extemis_fire_CO
+      canonical_units: kg m-2 s-1
+    - standard_name: extemis_fire_FRP
+      canonical_units: MW
+    - standard_name: extemis_gmi_oh
+      canonical_units: cm-3
+    - standard_name: extemis_gmi_h2o2
+      canonical_units: mol mol-1
+    - standard_name: extemis_gmi_no3
+      canonical_units: mol mol-1
+    - standard_name: extemis_dms_dms
+      canonical_units: nmol L-1
+    - standard_name: extemis_dust_clayfrac
+      canonical_units: '1'
+    - standard_name: extemis_dust_sandfrac
+      canonical_units: '1'
+    - standard_name: extemis_dust_sep
+      canonical_units: '1'
+    - standard_name: extemis_dust_uthres
+      canonical_units: m s-1
+    - standard_name: extemis_fengsha_albedo_drag
+      canonical_units: '1'

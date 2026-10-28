@@ -29,7 +29,7 @@ cece_config_file: @CECE_CONFIG@
 # The fields MET hosts as "cannot provide"/"share" imports: <standard name> <category> <variable> <source file>
 # (the last three name the record in met_import_totals.yaml, in the layout of tools.inventories.Totals).
 met_hosted_imports::
-  NO_emission_flux anthro NO @PROTOS_ROOT@/data/@RES@/inventories/anthro.nc
+  extemis_anthro_NO anthro NO @PROTOS_ROOT@/data/@RES@/inventories/anthro.nc
 ::
 
 # The cubed-sphere grid from the task-2 fix files through ESMF_GridCreateMosaic (see runbook.md section 9).

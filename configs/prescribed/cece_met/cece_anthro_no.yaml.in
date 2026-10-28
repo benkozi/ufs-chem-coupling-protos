@@ -33,7 +33,7 @@ cece_data:
 nuopc:
   export_fields:
     "NO":
-      standard_name: NO_emission_flux
+      standard_name: extemis_anthro_NO
       units: "kg m-2 s-1"
 
 output:

@@ -4,7 +4,8 @@
 !!   esmApp --dump-manifest <manifest>   print every manifest value the components read, then exit
 !!
 !! The field dictionary named in the config is loaded before the driver exists; on success PET 0 prints
-!! "<prototype>: completed <n> steps to <stop time>", on failure the error and an abort.
+!! "<prototype>: completed <n> steps to <stop time>", on failure the error, then a normal finalize and a
+!! non-zero exit on every PET (never an abort: MPI_Abort races the stdout forwarding and can lose the message).
 program esmApp
   use ESMF
   use NUOPC
@@ -22,6 +23,7 @@ program esmApp
   character(len=64) :: name = "met_catchem"
   character(len=32) :: stamp
   character(len=160) :: summary
+  character(len=256) :: failure = ""
   integer(ESMF_KIND_I8) :: steps
   integer :: rc, user_rc, local_pet
 
@@ -34,7 +36,7 @@ program esmApp
   if (command_argument_count() >= 1) then
     call get_command_argument(1, arg)
     if (trim(arg) == "--dump-manifest") then
-      if (command_argument_count() < 2) call abort_with("usage: esmApp --dump-manifest <manifest.yaml>")
+      if (command_argument_count() < 2) call stop_with("usage: esmApp --dump-manifest <manifest.yaml>")
       call get_command_argument(2, arg)
       call manifest_read(trim(arg), m, rc)
       call check(rc, "reading manifest "//trim(arg), __LINE__)
@@ -82,27 +84,50 @@ program esmApp
 
 contains
 
-  !> A failed call: the message names the call and the line (callers pass __LINE__), the ESMF log carries the
-  !! same line through ESMF_LogFoundError, stdout carries it for CTest and the terminal, then abort.
+  !> A failed call, decided collectively: every PET reaches this reduce after every checked call, so a failure
+  !! on any PET ends the run on all of them through a normal ESMF_Finalize (MPI_Finalize, every rank's stdout
+  !! drained) and a non-zero exit. The failing PETs print the message (with the call and the line, callers pass
+  !! __LINE__) and log it through ESMF_LogFoundError. ESMF_END_ABORT is not used: develop run 40597634701 lost
+  !! PET 0's PET-rule message when another rank's MPI_Abort interrupted Open MPI's output forwarding.
   subroutine check(code, what, line)
     integer, intent(in) :: code
     character(len=*), intent(in) :: what
     integer, intent(in) :: line
     character(len=16) :: line_text
-    if (code == ESMF_SUCCESS) return
-    write (line_text, '(i0)') line
-    if (ESMF_LogFoundError(rcToCheck=code, msg=trim(name)//": "//what//" failed", line=line, file=__FILE__)) &
-      call abort_with(trim(name)//": "//what//" failed at "//__FILE__//":"//trim(line_text)//" (see PET*.ESMF_LogFile)")
+    integer :: failed(1), any_failed, ignore
+    logical :: logged
+    failed(1) = 0
+    if (code /= ESMF_SUCCESS) then
+      failed(1) = 1
+      write (line_text, '(i0)') line
+      failure = trim(name)//": "//what//" failed at "//__FILE__//":"//trim(line_text)//" (see PET*.ESMF_LogFile)"
+      logged = ESMF_LogFoundError(rcToCheck=code, msg=trim(failure), line=line, file=__FILE__)
+    end if
+    call ESMF_VMAllFullReduce(vm, sendData=failed, recvData=any_failed, count=1, reduceflag=ESMF_REDUCE_MAX, rc=ignore)
+    if (any_failed == 0) return
+    if (failed(1) == 1) then
+      print '(a)', trim(failure)
+      flush (6)
+    end if
+    call finish_with_error()
   end subroutine check
 
-  subroutine abort_with(msg)
+  !> A uniform configuration error (every PET sees it): PET 0 prints it, then the same normal termination.
+  subroutine stop_with(msg)
     character(len=*), intent(in) :: msg
     integer :: ignore
-    print '(a)', msg
-    flush (6)
+    if (local_pet == 0) then
+      print '(a)', msg
+      flush (6)
+    end if
     call ESMF_LogWrite(msg, ESMF_LOGMSG_ERROR, rc=ignore)
-    call ESMF_Finalize(endflag=ESMF_END_ABORT, rc=ignore)
+    call finish_with_error()
+  end subroutine stop_with
+
+  subroutine finish_with_error()
+    integer :: ignore
+    call ESMF_Finalize(endflag=ESMF_END_NORMAL, rc=ignore)
     error stop 1
-  end subroutine abort_with
+  end subroutine finish_with_error
 
 end program esmApp

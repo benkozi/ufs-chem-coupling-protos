@@ -20,7 +20,7 @@ module proto_met
   use NUOPC
   use NUOPC_Model, only: modelSS => SetServices, label_Advertise, label_RealizeProvided, label_DataInitialize, &
                          label_Advance, label_CheckImport, label_TimestampExport, label_Finalize, NUOPC_ModelGet
-  use catchem_nuopc_interface, only: load_field_config, field_config
+  use catchem_nuopc_interface, only: load_field_config, field_config, is_emission_import
   use proto_manifest
   use proto_met_analytic
   use proto_totals
@@ -159,15 +159,18 @@ contains
                             line=__LINE__, file=__FILE__, rcToReturn=rc)
       return
     end if
+    ! The emission entries (catchem_var extemis/<category>/<variable>) are CECE's exports, not meteorology.
     n = 0
     do i = 1, field_config%n_import_fields
       if (field_config%import_fields(i)%optional .and. .not. field_config%import_fields(i)%advertise) cycle
+      if (is_emission_import(field_config%import_fields(i))) cycle
       n = n + 1
     end do
     allocate (s%exports(n), s%imports(field_config%n_export_fields))
     n = 0
     do i = 1, field_config%n_import_fields
       if (field_config%import_fields(i)%optional .and. .not. field_config%import_fields(i)%advertise) cycle
+      if (is_emission_import(field_config%import_fields(i))) cycle
       n = n + 1
       s%exports(n)%name = trim(field_config%import_fields(i)%standard_name)
       s%exports(n)%rank = field_config%import_fields(i)%dimensions
