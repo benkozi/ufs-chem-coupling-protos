@@ -73,6 +73,29 @@ def with_emission_entries(
     return FieldDictionaryFile(field_dictionary=dictionary)
 
 
+class HostedImportRow(Strict):
+    standard_name: str = Field(description="Standard name of the hosted CECE export.")
+    category: str = Field(description="Category of the totals record.")
+    variable: str = Field(description="Variable of the totals record.")
+    file: Path = Field(
+        description="Absolute path of the inventory the export is regridded from."
+    )
+
+    @model_validator(mode="after")
+    def _single_tokens(self) -> HostedImportRow:
+        # the driver splits a row on whitespace (NUOPC_FreeFormat)
+        for name in ("standard_name", "category", "variable", "file"):
+            value = str(getattr(self, name))
+            if not value or any(c.isspace() for c in value):
+                raise ValueError(
+                    f"{name} {value!r} must be non-empty and free of whitespace"
+                )
+        return self
+
+    def render(self) -> str:
+        return f"{self.standard_name} {self.category} {self.variable} {self.file}"
+
+
 class DriverConfig(Strict):
     prototype: str = Field(
         description="The run's name (summary line, driver component, pass expression)."
@@ -108,6 +131,10 @@ class DriverConfig(Strict):
     )
     run_sequence: list[str] = Field(
         description="Lines inside the @step loop.", min_length=1
+    )
+    hosted_imports: list[HostedImportRow] = Field(
+        default_factory=list,
+        description="Rows of met_hosted_imports::, the CECE exports MET also consumes; no table when empty.",
     )
 
     @model_validator(mode="after")
@@ -158,6 +185,13 @@ class DriverConfig(Strict):
         ]
         if self.regdecomp is not None:
             lines.append(f"regdecomp_per_tile: {self.regdecomp[0]} {self.regdecomp[1]}")
+        if self.hosted_imports:
+            lines += [
+                "",
+                "met_hosted_imports::",
+                *[f"  {row.render()}" for row in self.hosted_imports],
+                "::",
+            ]
         lines += [
             "",
             "runSeq::",

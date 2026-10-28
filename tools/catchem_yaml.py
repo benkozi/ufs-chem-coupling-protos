@@ -83,6 +83,18 @@ class FieldMappingEntry(Strict):
     )
 
 
+class _IndentedSequenceDumper(yaml.SafeDumper):
+    """Indents block sequences under their key (`key:\n  - a: 1\n    b: 2`): CATChem's mapping reader is
+    line-based and only takes `- ` items indented deeper than the section header (PyYAML's default puts them
+    at the header's column, which the reader skips without an error)."""
+
+    def increase_indent(self, flow: bool = False, indentless: bool = False) -> None:
+        del (
+            indentless
+        )  # PyYAML passes it by keyword; a block sequence is always indented here
+        super().increase_indent(flow, False)
+
+
 class FieldMapping(Strict):
     import_fields: list[FieldMappingEntry] = Field(
         description="The cap's imports, in file order."
@@ -104,7 +116,7 @@ class FieldMapping(Strict):
             ],
         }
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(yaml.safe_dump(doc, sort_keys=False))
+        path.write_text(yaml.dump(doc, Dumper=_IndentedSequenceDumper, sort_keys=False))
 
 
 def load_field_mapping(path: Path) -> FieldMapping:
@@ -146,7 +158,7 @@ def merged_mapping(base: FieldMapping, manifest: mf.Manifest) -> FieldMapping:
 
 class EmissionMapEntry(gd.EmissionMapVariable):
     units: str = Field(
-        description="Units of the file variable, from the manifest (informational for CATChem)."
+        description="Units of the file variable in CATChem's spelling (the defaults' catchem_units of the manifest's string); catchem_emis_apply converts by it."
     )
 
 
@@ -201,8 +213,13 @@ def emission_map(manifest: mf.Manifest, defaults: gd.GenDefaults) -> EmissionMap
                 raise ConfigError(
                     f"variable {name}/{variable} has no emission-map entry in the generator defaults"
                 )
+            if spec.units not in defaults.catchem_units:
+                raise ConfigError(
+                    f"{name}/{variable}: units {spec.units!r} have no CATChem spelling in the defaults' catchem_units"
+                )
             entries[variable] = EmissionMapEntry(
-                units=spec.units, **cat_defaults.variables[variable].model_dump()
+                units=defaults.catchem_units[spec.units],
+                **cat_defaults.variables[variable].model_dump(),
             )
         categories[name] = entries
     return EmissionMap(categories=categories)

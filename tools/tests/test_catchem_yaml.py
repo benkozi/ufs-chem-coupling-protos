@@ -106,7 +106,12 @@ def test_emission_map_targets_are_species_or_met_inputs(
     for category, variables in emission_map.categories.items():
         assert set(variables) == set(manifest.categories[category].variables)
         for name, variable in variables.items():
-            assert variable.units == manifest.categories[category].variables[name].units
+            assert (
+                variable.units
+                == defaults.catchem_units[
+                    manifest.categories[category].variables[name].units
+                ]
+            )
             for target in variable.map:
                 assert target in species or target.startswith("MET_"), (
                     f"{category}/{name} -> {target}"
@@ -199,4 +204,89 @@ def test_a_variable_without_a_map_entry_is_rejected(
     broken = defaults.model_copy(deep=True)
     del broken.categories["anthro"].variables["NO"]
     with pytest.raises(cy.ConfigError, match="anthro/NO"):
+        cy.emission_map(manifest, broken)
+
+
+def catchem_line_parser_entries(text: str, section: str) -> int:
+    """The entries CATChem's line-based reader (`parse_field_section` in catchem_nuopc_interface.F90) finds:
+    a section header at indent 0, an item is a `- ` line indented deeper than the header, properties deeper
+    than the header plus 2; anything else is skipped silently."""
+    count, in_section = 0, False
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0]
+        stripped = line.strip()
+        if not stripped:
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        if indent == 0:
+            in_section = stripped.split(":", 1)[0] == section
+            continue
+        if in_section and stripped.startswith("- "):
+            count += 1
+    return count
+
+
+def test_written_mapping_is_readable_by_catchems_line_parser(tmp_path: Path) -> None:
+    """Task 6: PyYAML's default block style puts `- ` at column 0, which CATChem's reader skips (0 imports)."""
+    mapping = cy.load_field_mapping(
+        Path(__file__).resolve().parents[2] / get_settings().catchem_field_mapping
+    )
+    path = tmp_path / "CATChem_field_mapping.yml"
+    mapping.to_yaml(path)
+    text = path.read_text()
+    assert catchem_line_parser_entries(text, "import_fields") == len(
+        mapping.import_fields
+    )
+    assert catchem_line_parser_entries(text, "export_fields") == len(
+        mapping.export_fields
+    )
+    for line in text.splitlines():
+        if line and not line.endswith(":"):
+            assert line.startswith(("  - ", "    ")), line
+    assert cy.FieldMapping.model_validate(yaml.safe_load(text)) == mapping
+
+
+# The spellings catchem_emis_apply converts (catchem_emis_mod.F90, the select case on the field's units);
+# anything else is logged per cell and applied as zero.
+APPLIED_UNITS = {
+    "nmol/l",
+    "nmol/L",
+    "1/cm3",
+    "1/cm^3",
+    "#/cm3",
+    "molec/cm3",
+    "mol/mol",
+    "kg/m2/s",
+}
+
+
+def test_emission_map_units_are_catchems_spellings(
+    manifest: mf.Manifest, defaults: gd.GenDefaults
+) -> None:
+    """Task 6: the manifest's CF strings (kg m-2 s-1, ...) made CATChem warn on every cell and apply nothing."""
+    emap = cy.emission_map(manifest, defaults)
+    applied = {
+        entry.units
+        for variables in emap.categories.values()
+        for entry in variables.values()
+        if any(not target.startswith("MET_") for target in entry.map)
+    }
+    assert applied
+    assert applied <= APPLIED_UNITS
+    assert emap.categories["anthro"]["SO2"].units == "kg/m2/s"
+    assert emap.categories["gmi"]["oh"].units == "molec/cm3"
+    assert emap.categories["dms"]["dms"].units == "nmol/l"
+
+
+def test_a_unit_without_a_catchem_spelling_is_an_error(
+    manifest: mf.Manifest, defaults: gd.GenDefaults
+) -> None:
+    broken = defaults.model_copy(
+        update={
+            "catchem_units": {
+                k: v for k, v in defaults.catchem_units.items() if k != "kg m-2 s-1"
+            }
+        }
+    )
+    with pytest.raises(cy.ConfigError, match="kg m-2 s-1"):
         cy.emission_map(manifest, broken)

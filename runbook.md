@@ -60,6 +60,10 @@ which is `BUILDX_BUILDER=cloud-bkrlps-cece-builder docker compose build`; the im
 
 The build context is the checkout minus `.dockerignore` (`.git`, build trees, `.venv`, `design/`, `data/`): about 70 MB with both submodules.
 
+**Incremental model builds.** The `cece` and `catchem` stages build in BuildKit cache mounts at their final paths (`id=protos-cece-build`, `id=protos-catchem-build`, mounted at `/opt/cece/build` and `/opt/catchem/build`), then copy the tree out of the mount and move it back in a second step (a mount's contents never reach the image, and the prototype links the trees at those paths). A submodule edit still re-runs the stage, but Ninja and make recompile only the changed files. A `.toolchain` stamp in each tree (the `g++` and `gfortran` versions, `esmf.mk`'s checksum, and for CECE Kokkos's version file) wipes the tree when the base image or Kokkos changes; the step then logs `cece: new toolchain, clean build tree`. The mounts live on the cloud builder's node; hosted CI starts with them empty and builds from scratch. Measured on the cloud builder (2026-10-28): the cold build with empty mounts took about 203 s for the CECE step and 80 s for CATChem's (572 s for `tools/ci.sh test ci` in all, Kokkos and the test step included); a one-line edit in each model then rebuilt CECE in 22 s (Ninja: the file, two relinks, the two executables) and CATChem in 14 s (the file, for `NUOPC_CATChem_cap` and `cc_nuopc`), 50 s for the whole image. Copying CECE's 2.3 GB tree out of the mount is included in those times and adds a 2.3 GB layer per CECE rebuild. Keep late settings (environment variables) in `final`: an edit to `base` invalidates every stage.
+
+**One cloud build at a time.** `tools/ci.sh build` and `tools/ci.sh test` take a lock directory, `build/.ci-build.lock`, and a second invocation waits (`another cloud build is running`) until the first exits. Overlapping builds share the builder's cores, each one's time counts against the build minutes, and two `make_mock_data` fixtures racing on the `protos-data` mount fail on the fix file's `.part` rename. A run killed with `kill -9` leaves the lock behind: `rmdir build/.ci-build.lock`.
+
 ## 4. Run a CI job locally
 
 Each runs the identical command string the workflow runs, inside `ufs-chem-coupling-protos:dev`, with the checkout bind-mounted at `/repo` (`compose.yaml`, service `ci`):
@@ -680,4 +684,140 @@ The parameter set `tools/defaults/gen_configs.yaml` (`tools/gen_defaults.py`, di
 - One CECE instance per executable and one `nz` for all its exports: the 17 surface species cost 127 levels each (40 MB per PET at C48, 160 MB at C96). Per-species export depth in CECE is the follow-up if that matters.
 - A category of the CATChem emission map without a `processes/extemis/<name>` block is active by default: hand-written configs must switch unused categories off explicitly (the generator writes every category).
 - The prune changes the contract of the five pre-existing optional met imports (they become truly optional); UFS provides them today.
-- The generated set has not been run yet (task 6); `gen_configs_cece_valid` and the pytest validator run prove CECE's schema accepts it, nothing more.
+- The generated set was first run in task 6 (section 12), which found four things the schema checks could not: the mapping's list indentation, `levels: 1` on 2-D stream variables, CATChem's unit spellings in the emission map and the `CECE -> MET` connector.
+
+## 12. CECE, MET and CATChem on the generated configuration (task 6)
+
+The first three-component run: CECE regrids every manifest category onto the host's tile blocks and exports it, CATChem consumes the 20 emission imports by reference sharing instead of reading files, MET provides the meteorology and the tracer field and, as a second consumer of one CECE export, writes the totals of the conservation check. Everything runs on the set `tools/gen_configs.py` writes; nothing under `build/gen` is edited by hand.
+
+### Commands
+
+```bash
+uv run python -m tools.make_mock_data --resolution C48 --out data/C48
+uv run python -m tools.gen_configs --manifest data/C48/manifest.yaml --out build/gen/C48 --pets 6
+```
+
+```bash
+tools/ci.sh test ci -R cece_met_catchem
+```
+
+By hand inside the image (from an empty run directory): `mpirun -np 6 build/protos/met_catchem/esmApp build/gen/C48/esm.configure`. Then:
+
+```bash
+uv run python -m tools.check_conservation --expected data/C48/inventories/totals.yaml --run-dir build/protos/cece_met_catchem/run_C48_np6 --category anthro --variable SO2 --level 1 --zero-above --rtol 2e-6
+```
+
+`--level K` compares level K alone (CECE's exports are all `nz` deep, the inventory total of a surface category has one level); `--zero-above` requires every level above K to be exactly zero.
+
+### What the generated set now contains (changes found by running it)
+
+| Change | Why |
+| --- | --- |
+| `CATChem_field_mapping.yml` indents its lists (`  - standard_name: ...`) | CATChem's mapping reader (`parse_field_section`) is line based and skips `- ` items at the header's column without an error: CATChem and MET advertised 0 fields |
+| `cece.yaml` declares `levels: 1` on every 2-D stream variable | CECE gives a variable without `levels` the grid's `nz` (`cece_io.cpp`) and then refuses the 2-D record (`AMIO field shape is incompatible with configured levels=127`) |
+| `CATChem_emission.yml` writes CATChem's unit spellings (`kg/m2/s`, `mol/mol`, `molec/cm3`, `nmol/l`) through `catchem_units:` of `tools/defaults/gen_configs.yaml` | `catchem_emis_apply` converts only those and applies any other string as zero with a warning per cell (12 million lines per PET log, the builder's disk filled) |
+| `esm.configure` has `CECE -> MET` in `runSeq::` and one `met_hosted_imports::` row (`extemis_anthro_SO2`, from `hosted_imports:` of the defaults) | the driver adds only the connectors `runSeq::` names; MET reference-shares the same CECE allocation CATChem binds and writes `met_import_totals.yaml` |
+| `Verbosity = low` | NUOPC's `high` dumps every import on entry and exit of every Run: 56 MB per PET log for the day |
+| CATChem diagnostics off (`diagnostics.output.enabled: false`) | aqmio's NetCDF output is not needed by any check; switch it on in a copy for a by-hand run |
+| `met.tracers` of the manifest: `so2`, `no3`, `oh`, `h2o2` (kg/kg), `so4`, `oc1`, `oc2`, `bc1`, `bc2` (ug/kg) after `sphum` and `seas1..5` | the applied species accumulate in the host tracer field across steps; `dms_in` stays CATChem-internal (neither gas nor aerosol in the species file, the cap would refuse it) |
+
+Other changes: CATChem logs `CATChem: emission import <name> ShareStatusField=<value>` for every bound emission import and refuses `not shared` (companion change on `feature/cece-coupling-proto`); MET logs `MET: tracer <name> area-weighted sum <x> at <hour>` on the hour; `esmApp` prints `<prototype>: memory per PET max virt <v> KB phys <p> KB (after init|at end)` (`ESMF_VMGetMemInfo`, current not peak); the driver refuses CECE with more than one DE per tile (`CECE needs one DE per tile`), on every PET, before CECE starts: inside CECE the PETs with an open corner ring fail while the others wait in a collective.
+
+### Run directory
+
+`build/protos/cece_met_catchem/run_C48_np6/`: `PET0..5.ESMF_LogFile` (about 260 KB each), `met_import_totals.yaml` (127 levels per step for `anthro/SO2`). `tools/ci.sh test <label>` copies every run directory, `build/gen/` and `LastTest.log` to `build/ci-out/<label>/` after the run, green or red, and exits with ctest's status (`ctest.status`).
+
+### Tests
+
+| Test | Label | What |
+| --- | --- | --- |
+| `proto_cece_met_catchem` | `ci` | 6 PETs on `build/gen/C48/esm.configure`, pass on `cece_met_catchem: completed 120 steps` (fixtures `mockdata`, `genconfigs`) |
+| `log_cece_met_catchem` | `ci` | `tests/log_check.cmake` on the PET logs: `RealizeAccepted removed 0`, the six `category <c>: <n> field(s) read from NUOPC imports` lines (7, 4, 3, 1, 4, 1), `20 emission import(s) bound`, `MET: 43 of 43 exports are reference-shared`, 20 distinct `Realized export field ... (48x48x127)`, 20 distinct CATChem `ShareStatusField=shared`, MET's hosted import shared; no `not shared`, no `Removed unconnected export field`, no `open corner ring` |
+| `growth_cece_met_catchem` | `ci` | MET's hourly `so2` sum at the last hour exceeds the first |
+| `conservation_cece_met_catchem` | `ci` | `anthro/SO2` level 1 against `totals.yaml` at the 24 hourly stamps, levels 2..127 zero, `--rtol 2e-6` |
+| `conservation_cece_met_catchem_tight_tolerance_fails` | `ci` | the same at `--rtol 1e-15`, passes on `exceeds rtol` |
+| `gen_configs_c48_np12`, `proto_cece_met_catchem_np12_fails` | `ci` | a 12-PET set; the run stops on `CECE needs one DE per tile` through a normal finalize |
+| `gen_configs_c96`, `proto_cece_met_catchem_c96` | `c96` | the C96 set and run (6 PETs); registered, not run |
+
+`tests/log_check.cmake` (`cmake -DRUN_DIR=<dir> -DSPEC=<file> -P tests/log_check.cmake`) reads a spec of `require`, `forbid`, `count <n>` and `grow` directives (POSIX extended regular expressions, `grep -E`) and fails on the first one that does not hold.
+
+### Measured (2026-10-28, `tools/ci.sh test ci` on the cloud builder's amd64 node)
+
+| Quantity | Value |
+| --- | --- |
+| `ctest -L ci` | 20 of 20 passed |
+| `proto_cece_met_catchem` wall time | 574.7 s for 120 steps (4.8 s per step; `proto_cece_met` 26.0 s, `proto_met_catchem` 33.8 s) |
+| memory per PET, max over PETs (physical) | 330 MB after init, 2.34 GB at the end (`proto_met_catchem` 167 / 299 MB, `proto_cece_met` 133 / 318 MB) |
+| conservation, `anthro/SO2` level 1 | max relative error 1.529e-6 at 2021-03-23T02:00, the same as task 4's `anthro/NO` (the two variables differ by a constant factor), within 2e-6 |
+| `so2` area-weighted sum in the host tracer field | 0 at 06:00, 9.61e4 at 07:00, 2.46e6 at 05:00 next day |
+| `proto_cece_met_catchem_np12_fails` | 0.5 s |
+
+### Caveats
+
+- 6 PETs only: several DEs per tile need a corner halo in CECE's host-block path (task 9).
+- Point sources are off; the file readers stay in CATChem until task 7's switch.
+- The 574.7 s above was OpenMP oversubscription, fixed since (section 13): with `OMP_NUM_THREADS` unset, CECE's Kokkos gave each of the 6 PETs all 16 cores. The memory is not a per-step leak: it plateaus at about 2.1-2.35 GB per PET within the first minute, as CECE's AMIO staging pools (one per data file, buffers of at least 32 MiB) fill; their sizing is a separate change.
+- `no3` is both the anthro `NO` target (`add`) and a gmi oxidant (`replace`): it is not an accumulating tracer.
+- `dms_in` is CATChem-internal and has no host tracer slot.
+
+## 13. Performance: threads, memory, profiling (issue #12)
+
+The task-6 run took 575 s and 2.35 GB per PET. Neither was resolution, CI length or a leak: CECE's Kokkos took every hardware thread on every PET (6 PETs x 16 threads on 16 cores), and CECE's AMIO staging pools (one per data file, buffers of at least 32 MiB) filled in the first minute.
+
+### Threads
+
+CECE's cap asks ESMF how many PEs its PET holds (`ESMF_VMGet(vm, localPet, peCount=)`) and hands that to `cece_set_host_thread_count` before the simulation is created; core init gives Kokkos that many OpenMP threads and ignores `OMP_NUM_THREADS`. A plain MPI launch gives 1 PE per PET; ESMF-managed threading (`ESMF_GridCompSetVMMaxPEs`, UFS's `<COMP>_omp_num_threads`) gives the component's threads. `driver.num_threads` in `cece.yaml` overrides both (experiments only; the generator does not write it). Without a host (CECE standalone) `OMP_NUM_THREADS` still applies. If Kokkos was initialized first by another component with more threads than CECE was given, core init fails by name. The image sets `OMP_NUM_THREADS=1 OMP_PROC_BIND=false` as a backstop for other OpenMP code. Every run logs:
+
+- PET logs: `[Cap] Kokkos OpenMP threads from the ESMF VM: 1 PE(s) on this PET`
+- stdout: `CECE: Kokkos OpenMP threads 1 (PEs on this PET 1, source vm)` (or `source config, driver.num_threads`, or `source OMP_NUM_THREADS`)
+
+`proto_cece_met_catchem` runs with `OMP_NUM_THREADS` unset (`ENVIRONMENT_MODIFICATION`) and a 300 s timeout, so a return of the oversubscription fails it; `log_cece_met_catchem` requires the cap's line.
+
+### Memory
+
+`cece_amio` in `tools/defaults/gen_configs.yaml` (`worker_threads: 1`, `staging_buffer_count: 2`, `staging_buffer_capacity_bytes: 4194304`, `prefetch_depth: 1`) is written into `cece.yaml` as `driver.amio_*`. A record larger than the capacity still gets a buffer of its own size, and a pool grows past its count on demand: AMIO logs about 25 informational `staging pool grew past configured buffer_count=2 (now 3 slots, ceiling 16)` lines per run. `log_cece_met_catchem` bounds the end-of-run memory: `below 1200000 cece_met_catchem: memory per PET max virt [0-9]+ KB phys ([0-9]+) KB \(at end\)` (`tests/log_check.cmake`'s `below <limit> <regex>`: every captured integer at most the limit; `log_check_below_fails` is its failure case on a fake log at task 6's 2348368 KB).
+
+### Profiling CECE
+
+Three layers, cheapest first:
+
+1. **ESMF's profiler, no code.** `ESMF_RUNTIME_PROFILE=ON ESMF_RUNTIME_PROFILE_OUTPUT=SUMMARY` writes `ESMF_Profile.summary` in the run directory: Init/Run time per component and phase, max/min over PETs. CECE's cap adds ESMF trace regions under its phases: `CECE: create sim` and `CECE: bind exports` (InitializeRealize), `CECE: import copy`, `CECE: cece_sim_step` and `CECE: timestamp` (Run). They cost nothing unless profiling or tracing is on (ESMF_refdoc 53.4.1-53.4.2).
+2. **Kokkos regions in CECE's core**, read with Kokkos Tools. `CECE::Step` (the same span as `CECE: cece_sim_step`), `CECE::AdvanceTime` with one child per stream named by its file (`CECE::AdvanceTime::anthro`, ...), `CECE::RegridPlan` (first step), `CECE::Read`, `CECE::Regrid`, `CECE::WriteBandToImport`, `CECE::Run`, `CECE::Stacking`, `CECE::ExportCopy`. They are Kokkos core API (`Kokkos::Profiling::ScopedRegion`), compiled in always and a no-op without a tool; a tool is a shared library Kokkos loads at run time from `KOKKOS_TOOLS_LIBS` (Kokkos must link libdl, `KOKKOS_ENABLE_LIBDL`). CECE does not depend on Kokkos Tools; a stack without it (spack-stack) only loses this readout. Where the regions go: one per stage with its own cost driver (streams and records for ingest, cells and source size for the regrid, species x `nz` x cells for stacking, exports x `nz` x cells for the copy); entered at most a few dozen times per step (per stream, never per variable or per cell); nested so the children account for the parent; if `CECE::Step`'s self time in the report exceeds 10 %, the uncovered code gets a region.
+3. **Sampling.** gdb stack samples of one rank: `gdb -p $(pgrep -x esmApp | head -1) -batch -ex 'thread apply all bt'` a few times during the run (inside the container, `--cap-add=SYS_PTRACE` for a by-hand run).
+
+The `profile` label runs layers 1 and 2:
+
+```bash
+tools/ci.sh test profile
+```
+
+`tools/ci.sh` builds the image with `--build-arg KOKKOS_TOOLS=on` for this label (Kokkos Tools 5.2.0, `kp_space_time_stack` and `kp_kernel_timer` in `/opt/kokkos-tools/lib`; off by default, so the CI image is unchanged). Tests: `proto_cece_met_catchem_profile` (the C48 run in `run_C48_np6_profile/`, stdout tee'd to `kokkos_stdout.txt`), `profile_esmf_cece_met_catchem` (the summary holds `[CECE] RunPhase1` and the five cap regions), `profile_kokkos_cece_met_catchem` (the report holds the core regions; reported as skipped when CMake finds no `kp_space_time_stack`). Outputs land in `build/ci-out/profile/build/protos/cece_met_catchem/run_C48_np6_profile/`.
+
+### Measured (2026-10-28, cloud builder amd64 node, C48, 6 PETs, 120 steps)
+
+| Quantity | Task 6 | Now |
+| --- | --- | --- |
+| `ctest -L ci` | 20 tests, about 11 min | 21 of 21 passed, about 2.5 min of tests |
+| `proto_cece_met_catchem` | 574.7 s | 52.9 s |
+| `proto_cece_met` | 26.0 s | 11.1 s |
+| memory per PET at the end, max over PETs (physical) | 2.35 GB | 867 MB |
+| conservation, `anthro/SO2` level 1 | 1.529e-6 | 1.529e-6 |
+
+Profile (`tools/ci.sh test profile`, 5 of 5 passed; per-PET mean over the 120 steps, ESMF summary and Kokkos space-time-stack):
+
+| Region | Time | Per step |
+| --- | --- | --- |
+| `[cece_met_catchem] RunPhase1` (whole run loop) | 51.8 s | |
+| `[CATCHEM] RunPhase1` | 28.7 s | 0.24 s |
+| `[MET] RunPhase1` | 12.1 s | 0.10 s |
+| `[CECE] RunPhase1` | 10.9 s | 0.091 s |
+| `CECE: cece_sim_step` / `CECE::Step` | 10.9 s / 10.2 s | 0.085 s |
+| `CECE::Run` | 7.66 s | |
+| `CECE::Stacking` (`StackingEngine_FusedSpeciesKernel` 6.21 s) | 6.73 s | |
+| `CECE::ExportCopy` | 0.93 s | |
+| `CECE::AdvanceTime` | 2.59 s | |
+| `CECE::AdvanceTime::gmi` / `anthro` / `fire` / `dms` / `fengsha` | 1.29 / 0.66 / 0.44 / 0.06 / 0.05 s | |
+| `CECE: import copy`, `CECE: timestamp`, the four connectors | < 0.01 s each | |
+| CECE init (`create sim` 0.064 s, `bind exports` 0.041 s) | 0.11 s | |
+
+`CECE::Step`'s self time is about 0 % (its children account for it), so the region set covers the step. CECE's largest cost is stacking all 20 species over 127 levels, 17 of them 2-D (the `nz`-deep exports of section 12); the ingest's largest self time is per variable in `gmi` and `anthro` (49 % and 31 % of their regions outside `Read`/`RegridPlan`/`WriteBandToImport`: the per-variable allreduces and time-axis checks). The tool prints six `allocation ... was not in the currently allocated set` warnings for buffers allocated before it attached; they do not affect the timings.

@@ -12,7 +12,11 @@ common stamp and level the relative error |actual - expected| / |expected| is lo
 zero is compared absolutely against --atol); the worst record is logged, and the exit status is 0 when every
 record is within its tolerance, 1 when one exceeds it (the message names the stamp and the tolerance), 2 for
 a usage error (unknown category or variable, no `times` in a file, fewer common stamps than --min-matches, a
-level-count mismatch).
+level-count mismatch, a --level beyond either file).
+
+--level K compares level K alone (1-based), so a one-level inventory can be checked against an nz-deep
+surface export whose flux sits in level 1 (task 6: CECE's exports are all nz deep); --zero-above then also
+requires every actual level above K to be exactly zero (exit status 1 otherwise, naming the stamp and level).
 """
 
 from __future__ import annotations
@@ -57,6 +61,14 @@ class Comparison(pydantic.BaseModel):
     zero_expected: list[bool] = pydantic.Field(
         description="Per level: whether the expected total is zero (the error is then absolute, judged by atol)."
     )
+    first_level: int = pydantic.Field(
+        default=1,
+        description="1-based level number of the first compared level (the --level value, or 1 for all levels).",
+    )
+    nonzero_above: list[int] = pydantic.Field(
+        default_factory=list,
+        description="1-based actual levels above the compared one whose total is not exactly zero (--level only).",
+    )
 
 
 def _category(totals: Totals, name: str, path: Path) -> CategoryTotals:
@@ -94,6 +106,7 @@ def compare(
     category: str,
     variable: str,
     min_matches: int,
+    level: int | None = None,
 ) -> list[Comparison]:
     """The matched records in time order; raises UsageError when the files cannot be compared."""
     expected = _records(
@@ -115,6 +128,14 @@ def compare(
     comparisons: list[Comparison] = []
     for when in common:
         e, a = expected[when], actual[when]
+        nonzero_above: list[int] = []
+        if level is not None:
+            if level > len(e) or level > len(a):
+                raise UsageError(
+                    f"{when.isoformat()}: level {level} requested but {len(e)} expected and {len(a)} actual levels"
+                )
+            nonzero_above = [k + 1 for k in range(level, len(a)) if a[k] != 0.0]
+            e, a = [e[level - 1]], [a[level - 1]]
         if len(e) != len(a):
             raise UsageError(
                 f"{when.isoformat()}: {len(e)} expected levels but {len(a)} actual levels"
@@ -130,6 +151,8 @@ def compare(
                 actual=a,
                 errors=errors,
                 zero_expected=[ev == 0.0 for ev in e],
+                first_level=level if level is not None else 1,
+                nonzero_above=nonzero_above,
             )
         )
     return comparisons
@@ -152,6 +175,13 @@ def worst(
                 best_ratio = ratio
                 best = (err, c.time, k, ratio > 1.0)
     return best
+
+
+def _positive(text: str) -> int:
+    value = int(text)
+    if value < 1:
+        raise argparse.ArgumentTypeError(f"must be a positive integer, got {value}")
+    return value
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -194,6 +224,17 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"smallest number of common time stamps accepted (default {settings.conservation_min_matches})",
     )
     parser.add_argument(
+        "--level",
+        type=_positive,
+        default=None,
+        help="compare this level alone (1-based), e.g. 1 for a surface flux in an nz-deep export",
+    )
+    parser.add_argument(
+        "--zero-above",
+        action="store_true",
+        help="with --level: every actual level above it must be exactly zero",
+    )
+    parser.add_argument(
         "--log-level",
         default=None,
         choices=get_args(LogLevel),
@@ -203,7 +244,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    args = build_parser().parse_args(list(sys.argv[1:] if argv is None else argv))
+    parser = build_parser()
+    args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
+    if args.zero_above and args.level is None:
+        parser.error("--zero-above needs --level")
     log.configure(args.log_level)
     actual = (
         args.actual
@@ -212,7 +256,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     try:
         comparisons = compare(
-            args.expected, actual, args.category, args.variable, args.min_matches
+            args.expected,
+            actual,
+            args.category,
+            args.variable,
+            args.min_matches,
+            args.level,
         )
     except (UsageError, OSError, pydantic.ValidationError) as exc:
         logger.error("%s", exc)
@@ -227,13 +276,26 @@ def main(argv: Sequence[str] | None = None) -> int:
             " ".join(f"{v:.9e}" for v in c.actual),
             " ".join(f"{v:.3e}" for v in c.errors),
         )
+    if args.zero_above:
+        for c in comparisons:
+            if c.nonzero_above:
+                logger.error(
+                    "check_conservation: %s level %d is not zero above level %d (%s/%s)",
+                    c.time.isoformat(),
+                    c.nonzero_above[0],
+                    c.first_level,
+                    args.category,
+                    args.variable,
+                )
+                return 1
     error, when, level, exceeded = worst(comparisons, args.rtol, args.atol)
-    zero = next(c for c in comparisons if c.time == when).zero_expected[level]
+    worst_record = next(c for c in comparisons if c.time == when)
+    zero = worst_record.zero_expected[level]
     kind = "absolute error (expected total is zero)" if zero else "relative error"
     tolerance = f"atol {args.atol:.1e}" if zero else f"rtol {args.rtol:.1e}"
     summary = (
         f"check_conservation: {len(comparisons)} matched records, max {kind} {error:.3e} "
-        f"at {when.isoformat()} level {level + 1}"
+        f"at {when.isoformat()} level {worst_record.first_level + level}"
     )
     if exceeded:
         logger.error("%s exceeds %s", summary, tolerance)

@@ -4,12 +4,16 @@
 # Default mechanism has no NO species) and the AQM map for the dust and fengsha MET_* targets; fire CO and
 # FRP are not applied (no CO species; plume rise stays off). Keep 'NO' quoted (YAML 1.1 reads NO as false).
 prototype: cece_met_catchem
-verbosity: high
+# NUOPC's generic Verbosity: `high` dumps every import on entry and exit of every Run (56 MB per PET log for
+# the 24 h C48 run, task 6); the components' own log lines do not depend on it.
+verbosity: low
 processes:
   - seasalt
 seasalt_scheme: geos12
+# CATChem's NetCDF diagnostics (aqmio) stay off in the generated run: their output fills the disk of the
+# 24 h run (task 6); CECE's output and diagnostics are off too (cece_yaml.py). Switch on for a by-hand run.
 diagnostics:
-  enabled: true
+  enabled: false
   directory: catchem_diag
   prefix: catchem
   frequency: 3600
@@ -22,11 +26,36 @@ diagnostics:
     - seas5
 run_sequence:
   - CECE
+  - CECE -> MET
   - MET
   - CECE -> CATCHEM
   - MET -> CATCHEM
   - CATCHEM
   - CATCHEM -> MET
+# MET also consumes these CECE exports (met_hosted_imports::) and writes their per-level totals to
+# met_import_totals.yaml; the conservation check compares level 1 with the inventory totals (task 6).
+hosted_imports:
+  - category: anthro
+    variable: SO2
+# Manifest (CF) units -> CATChem's spelling in the emission map, as CATChem's own AQM map writes them:
+# catchem_emis_apply converts kg/m2/s, mol/mol, molec/cm3 and nmol/l and applies any other string as zero,
+# with a warning per cell (task 6). The MET_* inputs (dust, fengsha) are not converted.
+catchem_units:
+  kg m-2 s-1: kg/m2/s
+  mol mol-1: mol/mol
+  cm-3: molec/cm3
+  nmol L-1: nmol/l
+  '1': '1'
+  m s-1: m/s
+  MW: MW
+# CECE's AMIO staging pools (cece.yaml driver.amio_*): CECE's defaults, 8 buffers of at least 32 MiB per data
+# file and prefetch 2, fill about 2.1 GB per PET at C48 in the first minute; these sizes measured 0.87 GB at
+# no time cost (performance task, 2026-10-28). A record larger than the capacity still gets its own buffer.
+cece_amio:
+  worker_threads: 1
+  staging_buffer_count: 2
+  staging_buffer_capacity_bytes: 4194304
+  prefetch_depth: 1
 categories:
   anthro:
     apply_method: add

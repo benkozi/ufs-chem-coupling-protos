@@ -64,11 +64,22 @@ def test_success_writes_the_seven_files(manifest_file: Path, tmp_path: Path) -> 
         tmp_path / "data/C48/inventories/anthro.nc"
     )
     driver = (out / "esm.configure").read_text()
+    # MET hosts one CECE export as a second consumer and writes its totals (task 6 conservation check)
+    assert (
+        "met_hosted_imports::\n  extemis_anthro_SO2 anthro SO2 "
+        f"{tmp_path / 'data/C48/inventories/anthro.nc'}\n::\n"
+    ) in driver
+    assert "    CECE\n    CECE -> MET\n    MET\n" in driver
+    # NUOPC's `high` Verbosity dumps every import on every Run (56 MB per PET log in 24 h at C48)
+    assert "Verbosity = low\n" in driver
+    assert "Verbosity = high" not in driver
     assert f"manifest: {manifest_file.resolve()}\n" in driver
     assert f"data_root: {tmp_path}\n" in driver
     assert f"cece_config_file: {out / 'cece.yaml'}\n" in driver
     assert f"catchem_config_file: {out / 'CATChem_new_config.yml'}\n" in driver
     science = yaml.safe_load((out / "CATChem_new_config.yml").read_text())
+    # diagnostics off: aqmio's NetCDF output of every step fills the disk of a 24 h run (task 6)
+    assert science["diagnostics"]["output"]["enabled"] is False
     assert science["simulation"]["emission_filename"] == str(
         out / "CATChem_emission.yml"
     )
@@ -277,3 +288,45 @@ def test_validator_errors_exit_1(
         assert run(manifest_file, tmp_path / "gen") == 1
     assert "boom" in caplog.text
     assert not (tmp_path / "gen" / "gen_configs_manifest.yaml").exists()
+
+
+@pytest.mark.parametrize(("category", "variable"), [("ship", "NO"), ("anthro", "XYZ")])
+def test_a_hosted_import_the_manifest_lacks_is_a_usage_error(
+    manifest_file: Path,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    category: str,
+    variable: str,
+) -> None:
+    doc = yaml.safe_load(get_settings().gen_defaults_file.read_text())
+    doc["hosted_imports"] = [{"category": category, "variable": variable}]
+    custom = tmp_path / "gen.yaml"
+    custom.write_text(yaml.safe_dump(doc))
+    with caplog.at_level(logging.ERROR, logger=log.ROOT_NAME):
+        assert run(manifest_file, tmp_path / "g", "--defaults", str(custom)) == 2
+    assert f"hosted import {category}/{variable}" in caplog.text
+
+
+def test_no_hosted_imports_writes_no_table(manifest_file: Path, tmp_path: Path) -> None:
+    doc = yaml.safe_load(get_settings().gen_defaults_file.read_text())
+    doc["hosted_imports"] = []
+    custom = tmp_path / "gen.yaml"
+    custom.write_text(yaml.safe_dump(doc))
+    out = tmp_path / "g"
+    assert run(manifest_file, out, "--defaults", str(custom)) == 0
+    assert "met_hosted_imports" not in (out / "esm.configure").read_text()
+
+
+def test_hosted_imports_need_a_cece_to_met_connector(
+    manifest_file: Path, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Without `CECE -> MET` in runSeq:: the driver adds no connector and MET's hosted import stays unconnected."""
+    doc = yaml.safe_load(get_settings().gen_defaults_file.read_text())
+    doc["run_sequence"] = [
+        line for line in doc["run_sequence"] if line != "CECE -> MET"
+    ]
+    custom = tmp_path / "gen.yaml"
+    custom.write_text(yaml.safe_dump(doc))
+    with caplog.at_level(logging.ERROR, logger=log.ROOT_NAME):
+        assert run(manifest_file, tmp_path / "g", "--defaults", str(custom)) == 2
+    assert "CECE -> MET" in caplog.text

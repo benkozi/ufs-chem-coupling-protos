@@ -137,3 +137,28 @@ def test_checked_in_dictionary_already_carries_the_default_entries(
     """The prescribed fd_protos.yaml and the generator agree for the default manifest (the ci runs use the file)."""
     base = dc.load_field_dictionary(REPO_ROOT / get_settings().base_field_dictionary)
     assert dc.with_emission_entries(base, manifest) == base
+
+
+def test_hosted_imports_are_written_as_the_met_table() -> None:
+    rows = [
+        dc.HostedImportRow(
+            standard_name="extemis_anthro_SO2",
+            category="anthro",
+            variable="SO2",
+            file=Path("/root/data/C48/inventories/anthro.nc"),
+        )
+    ]
+    text = driver(hosted_imports=rows).render()
+    assert (
+        "met_hosted_imports::\n"
+        "  extemis_anthro_SO2 anthro SO2 /root/data/C48/inventories/anthro.nc\n"
+        "::\n"
+    ) in text
+    assert text.index("met_hosted_imports::") < text.index("runSeq::")
+
+
+def test_hosted_import_fields_must_be_single_tokens() -> None:
+    with pytest.raises(pydantic.ValidationError, match="whitespace"):
+        dc.HostedImportRow(
+            standard_name="a b", category="anthro", variable="SO2", file=Path("/f.nc")
+        )

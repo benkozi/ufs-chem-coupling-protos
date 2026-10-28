@@ -13,8 +13,10 @@ from tools import gen_defaults as gd
 from tools import manifest as mf
 from tools.settings import get_settings
 
-# sha256 of the canonical JSON dump of GenDefaults from tools/defaults/gen_configs.yaml (task 5).
-GEN_DEFAULTS_DIGEST = "7dc851b3712ca47f4987d916dd08ce9031b0b0f5d295f5d36e362ee1cdb7e981"
+# sha256 of the canonical JSON dump of GenDefaults from tools/defaults/gen_configs.yaml (task 5; task 6 added
+# hosted_imports anthro/SO2, `CECE -> MET` in run_sequence, catchem_units, diagnostics off, Verbosity low; the
+# performance task cece_amio).
+GEN_DEFAULTS_DIGEST = "1e9bdb8505154865fff721de49aee74de5d65b4160a0eb2355bc2517c0d9cfda"
 
 
 def test_every_field_of_every_model_has_a_description() -> None:
@@ -41,7 +43,24 @@ def test_checked_in_defaults_cover_every_manifest_category_and_variable() -> Non
     assert defaults.categories["fire"].vertical_dist == "Ppbl"
     assert defaults.processes == ["seasalt"]
     assert defaults.run_sequence[0] == "CECE"
+    assert defaults.run_sequence[1] == "CECE -> MET"
     assert defaults.run_sequence[-1] == "CATCHEM -> MET"
+    assert defaults.cece_amio == gd.CeceAmio(
+        worker_threads=1,
+        staging_buffer_count=2,
+        staging_buffer_capacity_bytes=4194304,
+        prefetch_depth=1,
+    )
+
+
+def test_amio_sizes_are_positive() -> None:
+    with pytest.raises(pydantic.ValidationError, match="greater than 0"):
+        gd.CeceAmio(
+            worker_threads=1,
+            staging_buffer_count=0,
+            staging_buffer_capacity_bytes=1,
+            prefetch_depth=1,
+        )
 
 
 def test_checked_in_defaults_are_pinned() -> None:
