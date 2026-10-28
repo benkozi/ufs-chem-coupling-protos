@@ -1,0 +1,174 @@
+# Parameter set of the config generator (tools/gen_configs.py): everything the emitted files need that the
+# manifest does not carry. Parsed by tools.gen_defaults.GenDefaults. Edit here, not in Python.
+# The emission map follows CATChem's own NUOPC test map (tests/CATChem_emission.yml: NO feeds no3, the
+# Default mechanism has no NO species) and the AQM map for the dust and fengsha MET_* targets; fire CO and
+# FRP are not applied (no CO species; plume rise stays off). Keep 'NO' quoted (YAML 1.1 reads NO as false).
+prototype: cece_met_catchem
+verbosity: high
+processes:
+  - seasalt
+seasalt_scheme: geos12
+diagnostics:
+  enabled: true
+  directory: catchem_diag
+  prefix: catchem
+  frequency: 3600
+  format: netcdf
+  diag_list:
+    - seas1
+    - seas2
+    - seas3
+    - seas4
+    - seas5
+run_sequence:
+  - CECE
+  - MET
+  - CECE -> CATCHEM
+  - MET -> CATCHEM
+  - CATCHEM
+  - CATCHEM -> MET
+categories:
+  anthro:
+    apply_method: add
+    vertical_dist: none
+    variables:
+      'NO':
+        long_name: Nitrogen Oxide
+        scale:
+          - 1.0
+        map:
+          - no3
+      SO2:
+        long_name: Sulfur Dioxide
+        scale:
+          - 1.0
+        map:
+          - so2
+      POC:
+        long_name: Primary Organic Carbon
+        scale:
+          - 0.9
+          - 0.9
+        map:
+          - oc1
+          - oc2
+      TERP:
+        long_name: Terpenes
+        scale:
+          - 0.09
+        map:
+          - oc2
+      ISOP:
+        long_name: Isoprene
+        scale:
+          - 0.054
+        map:
+          - oc2
+      PEC:
+        long_name: Primary Elemental Carbon
+        scale:
+          - 0.8
+          - 0.2
+        map:
+          - bc1
+          - bc2
+      PSO4:
+        long_name: Primary Sulfate
+        scale:
+          - 1.0
+        map:
+          - so4
+  fire:
+    apply_method: add
+    vertical_dist: Ppbl
+    variables:
+      'NO':
+        long_name: Fire Nitrogen Oxide
+        scale:
+          - 1.0
+        map:
+          - no3
+      SO2:
+        long_name: Fire Sulfur Dioxide
+        scale:
+          - 1.0
+        map:
+          - so2
+      CO:
+        long_name: Fire Carbon Monoxide
+        scale: []
+        map: []
+      FRP:
+        long_name: Fire Radiative Power
+        scale: []
+        map: []
+  gmi:
+    apply_method: replace
+    vertical_dist: none
+    variables:
+      oh:
+        long_name: Hydroxyl Radical
+        scale:
+          - 1.0
+        map:
+          - oh
+      h2o2:
+        long_name: Hydrogen Peroxide
+        scale:
+          - 1.0
+        map:
+          - h2o2
+      no3:
+        long_name: Nitrate Radical
+        scale:
+          - 1.0
+        map:
+          - no3
+  dms:
+    apply_method: replace
+    vertical_dist: none
+    variables:
+      dms:
+        long_name: Dimethyl Sulfide
+        scale:
+          - 1.0
+        map:
+          - dms_in
+  dust:
+    apply_method: replace
+    vertical_dist: none
+    variables:
+      clayfrac:
+        long_name: Clay Fraction
+        scale:
+          - 1.0
+        map:
+          - MET_CLAYFRAC
+      sandfrac:
+        long_name: Sand Fraction
+        scale:
+          - 1.0
+        map:
+          - MET_SANDFRAC
+      sep:
+        long_name: Sediment Supply Map
+        scale:
+          - 1.0
+        map:
+          - MET_SSM
+      uthres:
+        long_name: Friction Velocity Threshold
+        scale:
+          - 1.0
+        map:
+          - MET_USTAR_THRESHOLD
+  fengsha:
+    apply_method: replace
+    vertical_dist: none
+    variables:
+      albedo_drag:
+        long_name: Drag Partition
+        scale:
+          - 1.0
+        map:
+          - MET_RDRAG

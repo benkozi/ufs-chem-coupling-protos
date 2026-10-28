@@ -96,5 +96,8 @@ set_tests_properties(
     FIXTURES_REQUIRED mockdata
     LABELS ci
     PASS_REGULAR_EXPRESSION "PET count 4 must be a multiple of 6"
+    # The message must arrive through a normal termination: an MPI_Abort races the stdout forwarding
+    # (develop run 40597634701 lost PET 0's line), so the abort banner fails the test.
+    FAIL_REGULAR_EXPRESSION "MPI_ABORT|ORTE_ERROR_LOG"
     TIMEOUT 300
 )

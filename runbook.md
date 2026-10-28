@@ -542,7 +542,7 @@ docker compose run --rm ci sh -c 'cd build/protos/cece_met/run_C48_np6 && mpirun
 docker compose run --rm ci sh -c 'cd build/protos/cece_met/run_C96_np6 && mpirun -np 6 ../../met_catchem/esmApp ../esm.C96.configure'
 ```
 
-On success PET 0 prints `cece_met: completed 120 steps to 2021-03-23T06:00:00`. The run directory holds `met_import_totals.yaml` (PET 0, rewritten every step) and the PET logs with the evidence: `[Cap] Parent grid: tileCount=6, local DE on tile t, block i=1..48 j=1..48 (48x48), corners 49x49`, `[DRIVER] host-block destination: 48x48 cells with 2401 explicit corners; band j0=0 j1=48`, `[Cap] Realized export field "NO" (48x48x1) bound to simulation`, `MET: hosted import NO_emission_flux ShareStatusField=shared ShareStatusGeomObject=shared rank=3 levels=1 units=kg m-2 s-1`, and one `MET: totals <stamp> anthro/NO = …` line per step.
+On success PET 0 prints `cece_met: completed 120 steps to 2021-03-23T06:00:00`. The run directory holds `met_import_totals.yaml` (PET 0, rewritten every step) and the PET logs with the evidence: `[Cap] Parent grid: tileCount=6, local DE on tile t, block i=1..48 j=1..48 (48x48), corners 49x49`, `[DRIVER] host-block destination: 48x48 cells with 2401 explicit corners; band j0=0 j1=48`, `[Cap] Realized export field "NO" (48x48x1) bound to simulation`, `MET: hosted import extemis_anthro_NO ShareStatusField=shared ShareStatusGeomObject=shared rank=3 levels=1 units=kg m-2 s-1`, and one `MET: totals <stamp> anthro/NO = …` line per step.
 
 | Config key (driver, `esm.configure`) | Meaning |
 | --- | --- |
@@ -557,7 +557,7 @@ On success PET 0 prints `cece_met: completed 120 steps to 2021-03-23T06:00:00`. 
 | `driver.start_time`, `end_time`, `timestep_seconds` | the manifest clock, rendered by CMake from `tools/defaults/manifest.yaml` (GNU `date` adds the duration) |
 | `driver.grid.nz: 1` | the only grid key CECE reads on the parent-grid path; the export is rank 3 with one ungridded level |
 | `cece_data.streams[0]` | `anthro.nc` as a `series` stream (CATChem's hourly cadence is a 25-record axis, CECE's `cadence: hourly` would be a 24-record profile), `tintalgo: linear`, `taxmode: limit` (a step outside the axis fails), `mapalgo: consd`, variable `NO` → `NO_anthro` |
-| `species."NO"`, `nuopc.export_fields."NO"` | the export, `standard_name: NO_emission_flux` (in `fd_protos.yaml`); keep `"NO"` quoted |
+| `species."NO"`, `nuopc.export_fields."NO"` | the export, `standard_name: extemis_anthro_NO` (in `fd_protos.yaml`); keep `"NO"` quoted |
 | `output.enabled: false`, no `local_time` | both are band-gathered and refused on a host block |
 
 `uv run --no-sync python extern/CECE/scripts/validate_cece_config.py build/protos/cece_met/cece_anthro_no.C48.yaml` validates the rendered YAML against CECE's schema (the `cece_config_valid` test).
@@ -588,7 +588,7 @@ The checker matches the two files by time stamp (24 common hourly stamps in a 24
 | Run | Result |
 | --- | --- |
 | `tools/ci.sh test ci` (the `test` stage on the cloud builder's amd64 node) | 11 of 11 `ci` tests pass: `proto_cece_met` 26.3 s, `conservation_cece` 0.7 s, `cece_config_valid` 0.1 s; the task-3 runs unchanged (`proto_met_catchem` 29.2 s, `proto_met_catchem_np12` 18.8 s); `ctest` total 84 s |
-| `proto_cece_met` (C48, 6 PETs, 120 steps) | every PET: `tileCount=6`, its tile, block `48x48`, corners `49x49`; `[DRIVER] host-block destination: 48x48 cells with 2401 explicit corners; band j0=0 j1=48`; `Realized export field "NO" (48x48x1) bound to simulation`; `MET: hosted import NO_emission_flux ShareStatusField=shared ShareStatusGeomObject=shared rank=3 levels=1 units=kg m-2 s-1`; 120 totals records, the first 4.2444e+03 kg s⁻¹ at 06:00, the last 4.2242e+03 at 05:48 |
+| `proto_cece_met` (C48, 6 PETs, 120 steps) | every PET: `tileCount=6`, its tile, block `48x48`, corners `49x49`; `[DRIVER] host-block destination: 48x48 cells with 2401 explicit corners; band j0=0 j1=48`; `Realized export field "NO" (48x48x1) bound to simulation`; `MET: hosted import extemis_anthro_NO ShareStatusField=shared ShareStatusGeomObject=shared rank=3 levels=1 units=kg m-2 s-1`; 120 totals records, the first 4.2444e+03 kg s⁻¹ at 06:00, the last 4.2242e+03 at 05:48 |
 | `conservation_cece` (24 matched hourly stamps) | relative error between 4.5e-8 (09:00) and **1.529e-6** (02:00 next day); registered `--rtol 2e-6`; `conservation_cece_tight_tolerance_fails` passes on `exceeds rtol 1.0e-15` |
 | `tools/ci.sh test c96` (on request, 2026-10-27) | 3 of 3 `c96` tests pass in 144 s: `make_mock_data_c96` 8.0 s, `proto_met_catchem_c96` (12 PETs) 73.7 s, `proto_cece_met_c96` (6 PETs) 62.7 s; the C96 cap lines read `block i=1..96 j=1..96 (96x96), corners 97x97` and `Realized export field "NO" (96x96x1)`, the hosted import is `shared`, the last total 4.2242e+03 kg s⁻¹ (the inventory is grid-independent, so the C48 and C96 totals agree to the printed precision); no conservation test is registered at C96 (the `c96` label is a run, not a check) |
 | `tools/ci.sh test probe -V` (`grid_probe_np6`, `grid_probe_np12`) | 6 PETs: every DE a whole tile, corners `49x49`, DistGrid blocks `1..48 x 1..48` per tile, area/4π = 1.00000000; 12 PETs: blocks `1..48 x 1..24` and `25..48`, corners `49x24` (lower DE, open ring) and `49x25` (upper DE) |
@@ -603,3 +603,81 @@ Why the error is not zero: AXIS normalizes by destination polygon area and treat
 - The CECE shared libraries are reached through the rpath baked into `esmApp`; an executable built elsewhere against the same tree needs the same three directories (`/opt/cece/build`, `…/extern/helm/libs/amio`, `…/extern/helm/libs/logs`) on its rpath or `LD_LIBRARY_PATH`.
 - CECE's `end_time` is the run's stop time: a shorter one freezes the export after CECE reports completion (the cap logs "already complete"); a run longer than the inventory's 25 records fails in CECE (`taxmode: limit`), by design.
 - The CECE branch's own test suites are CECE CI's to run; this image cannot (`CECE_BUILD_TESTING=OFF`, no GTest).
+
+## 11. Emission imports in CATChem and the config generator (task 5)
+
+CATChem now consumes CECE's emission exports through NUOPC instead of its file readers, and `tools/gen_configs.py` writes every configuration file of a run from the task-2 manifest. Nothing runs the three components together yet: that is task 6, on the generated set.
+
+### CATChem branch
+
+`extern/CATChem` is pinned to `benkozi/CATChem` branch `feature/cece-coupling-proto` (cut from `b22dc160`, whose `drivers/` equal `feature/rework` `84532349`; `.gitmodules` names the fork over HTTPS). The branch adds:
+
+- **Mapping entries.** `drivers/nuopc/CATChem_field_mapping.yml` gains one optional, advertised rank-3 import per gridded category and variable of the manifest (20: anthro 7, fire 4, gmi 3, dms 1, dust 4, fengsha 1), `standard_name: extemis_<category>_<variable>`, `catchem_var: extemis/<category>/<variable>`, `vertical_axis: level`, the manifest's units. `point` has none.
+- **Pruning.** A `label_RealizeAccepted` specialization removes every optional, advertised import that no provider connected, before NUOPC's generic connected-imports check (`Import Fields not all connected`); the log says `CATChem: RealizeAccepted removed <n> unconnected optional import(s)`. In `proto_met_catchem` that is the 20 emission entries; the five pre-existing optional met imports are covered too.
+- **Binding.** In DataInitialize, after `catchem_nuopc_init`, `catchem_emis_bind_imports` hands every present emission import's pointer (the provider's own memory, reference sharing) to its category's field; a category becomes import-fed only when every field is bound. The run-time met loop skips emission entries. `catchem_emis_update` copies the imports every step (`catchem_emis_copy_imports`) instead of the period-key/read/blend machinery; `catchem_emis_apply`, the vertical distribution and plume rise are unchanged. Log lines: `CATChem: bound emission import extemis_anthro_NO to anthro/NO`, `CATChem: category anthro: 7 field(s) read from NUOPC imports`, `catchem_emis_bind_import: import extemis_gmi_oh not bound: category gmi is not configured or not active`.
+- **Contract.** Every export is rank 3 with the model's `nz` levels (one CECE instance has one `nz`); a surface category's flux is in level 1. CATChem keeps `emission_data(nx, ny, nlev, 1)` for every field: a 2-D category takes the import's level 1 and zero above, a 3-D one every level, flipped only when `reverse_vertical` (CECE delivers bottom-up, so the generator writes `false`). An import with another extent fails by name: `CATChem: emission import <name> has <n> levels on <nx>x<ny>, expected <nlev> on <nx>x<ny>`. No `source_file` is needed on the import path; an unconnected import then fails at the first update (`No valid source file specified for category`).
+- **Tests.** `tests/CATChem_nuopc_lifecycle_config.yml` activates `extemis` with `anthro` (no `source_file`; `gmi` and `dms` off explicitly, since a category of the emission map without a block is active by default); `nuopc_contract_harness` binds the seven anthro imports in the managed lifecycle, and in its direct part refuses a field with `nz + 1` levels, binds the valid state and checks the copy (level 1 of the import, zero above, shape `nx x ny x nz x 1`). CATChem's GCC CI builds with `CATCHEM_BUILD_NUOPC=OFF`; the NUOPC tests run in the Intel and Docker jobs. Run here (2026-10-28, cloud builder, a scratch stage on the image's `catchem` stage reconfigured with `CATCHEM_BUILD_TESTING=ON`): `nuopc_contract_valid` 1.37 s and `test_nuopc_diag_output` 1.69 s, both passed.
+
+### Names
+
+Emission standard names are `extemis_<category>_<variable>` (the `<species>_emission_flux` style collides for anthro and fire `NO`); task 4's `NO_emission_flux` is now `extemis_anthro_NO` in `fd_protos.yaml`, `cece_anthro_no.yaml.in` and `protos/cece_met/esm.configure.in`. `fd_protos.yaml` carries all 20 names with the manifest's units as canonical units. MET exports the mapping's met fields only (entries whose `catchem_var` starts with `extemis/` are skipped), so `proto_met_catchem` still shares 43 of 43 exports.
+
+### The generator
+
+```bash
+uv run python -m tools.gen_configs --manifest data/C48/manifest.yaml --out build/gen/C48 --pets 6
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--manifest` | the task-2 manifest; relative paths in it resolve against `--data-root` (default: the current directory, where `make_mock_data` ran) |
+| `--out` | output directory (git-ignored under `build/`); every emitted path is absolute |
+| `--pets N` | PET count, a multiple of 6 (one DE per PET on six tiles); `--regdecomp NX NY` writes `regdecomp_per_tile:` (product = N / 6) |
+| `--defaults` | the generator's parameter set (default `tools/defaults/gen_configs.yaml`, or `PROTOS_GEN_DEFAULTS`) |
+| `--catchem-source-files` | write the manifest's inventory paths as `source_file` (the file-path comparison run, task 9); by default the science config has none |
+| `--log-level` | `PROTOS_LOG_LEVEL` otherwise |
+
+Exit status: 0; 1 when a file cannot be written or CECE's validator rejects the emitted YAML; 2 for a usage error (PET rule, an invalid manifest, a category or variable without defaults, an emission-map target that is neither a species of `CATChem_species.yml` nor a `MET_*` input).
+
+| Output under `--out` | Content |
+| --- | --- |
+| `cece.yaml` | `driver` (manifest clock, `grid.nz: 127`), one `series`/`monthly` stream per category (`tintalgo: linear`, `taxmode: limit`, `extend` for the static file, `mapalgo` from the manifest, `levels: 127` on the 3-D variables), one species and one export per variable (`<category>_<variable>` → `extemis_<category>_<variable>`), `output.enabled: false` |
+| `fd.yaml` | `fd_protos.yaml` with its `extemis_*` entries replaced by the manifest's |
+| `CATChem_new_config.yml` | the science config: clock, levels, diagnostics and processes from the defaults, `extemis` with every category on the import path (`time_interpolation: none`, `reverse_vertical: false`, `apply_method` and `vertical_dist` from the defaults), `point` off, absolute species and emission-map paths |
+| `CATChem_emission.yml` | the emission map: anthro as CATChem's `tests/CATChem_emission.yml` (`NO → no3`), fire `NO`/`SO2` likewise and `CO`/`FRP` unmapped, gmi and dms as themselves (`replace`), dust and fengsha to the `MET_*` targets |
+| `CATChem_field_mapping.yml` | the submodule's mapping without its `extemis/` entries plus the manifest's |
+| `esm.configure` | `prototype: cece_met_catchem`, `EARTH_component_list: CECE MET CATCHEM`, PET lists, the six paths, `grid_source: mosaic`, `runSeq:: @720 / CECE / MET / CECE -> CATCHEM / MET -> CATCHEM / CATCHEM / CATCHEM -> MET / @` |
+| `gen_configs_manifest.yaml` | the record: manifest path and sha256, defaults file, data root, PETs, decomposition, outputs, command, time |
+
+The parameter set `tools/defaults/gen_configs.yaml` (`tools/gen_defaults.py`, digest-pinned by `tools/tests/test_gen_defaults.py`) holds everything the manifest does not: per category `apply_method`, `vertical_dist` (`Ppbl` for fire), `plume_rise`, `diagnostics` and the emission map; the processes (`seasalt`, geos12), the diagnostics block, the run-sequence lines, the prototype name. Settings (`PROTOS_` prefix): `gen_defaults_file`, `catchem_field_mapping`, `catchem_species_file`, `base_field_dictionary`, `cece_validator`, `n_tiles`, `standard_name_prefix`, the seven output names.
+
+### Tests
+
+| Test | Label | What |
+| --- | --- | --- |
+| `gen_configs_c48` | `ci` | the generator on `data/C48/manifest.yaml` into `build/gen/C48` (after the `mockdata` fixture; `FIXTURES_SETUP genconfigs`) |
+| `gen_configs_cece_valid` | `ci` | CECE's validator on `build/gen/C48/cece.yaml` |
+| `proto_met_catchem_bad_petcount` | `ci` | now also `FAIL_REGULAR_EXPRESSION "MPI_ABORT|ORTE_ERROR_LOG"`: the PET-rule message must arrive through a normal termination |
+| `tools/tests/test_gen_defaults.py`, `test_catchem_yaml.py`, `test_cece_yaml.py`, `test_driver_config.py`, `test_gen_configs.py` | pytest | the models, the naming, the emitted files, CECE's validator in-process, the sync test between the generator and the CATChem branch's mapping, the CLI's exit codes; 136 tests at 100 % |
+
+### Failures end through a normal finalize
+
+`esmApp`'s `check` is collective: after every checked call all PETs reduce a failure flag; when any PET failed, the failing PETs print their line, every PET calls `ESMF_Finalize(endflag=ESMF_END_NORMAL)` and exits with `error stop 1`. The `develop` run 40597634701 had lost PET 0's `PET count 4 must be a multiple of 6` line when rank 3's `MPI_Abort` interrupted Open MPI's stdout forwarding (`ORTE_ERROR_LOG: Data unpack would read past end of buffer`), on the same tree that had passed on the PR. A PET that never returns from a call now waits for the test's `TIMEOUT` instead of aborting the job.
+
+### Measured (2026-10-28, cloud builder amd64 node)
+
+| Run | Result |
+| --- | --- |
+| `tools/ci.sh test ci -R bad_petcount` with the `FAIL_REGULAR_EXPRESSION` and the old abort | fails on the banner (`Error regular expression found in output. Regex=[MPI_ABORT|ORTE_ERROR_LOG]`): the rule's failure case, red first |
+| the same with the collective `check`, `--repeat until-fail:10` | 10 of 10 passed, 0.4-2.5 s each |
+| `tools/ci.sh build` after the CATChem and prototype changes | `catchem` and `final` rebuilt, `base`, `python`, `kokkos`, `cece` `CACHED` |
+| `tools/ci.sh test ci` with the new mapping, the MET skip and the rename (11 tests, before the generator registrations) | 11 of 11 passed in 97 s: `proto_met_catchem` 30.7 s, `proto_met_catchem_np12` 18.9 s, `proto_cece_met` 26.2 s; MET `43 of 43 exports are reference-shared` and `0 hosted imports` in `met_catchem`, `hosted import extemis_anthro_NO ShareStatusField=shared ... rank=3 levels=1` in `cece_met` |
+| `tools/ci.sh test ci` with the generator registrations (13 tests) | 13 of 13 passed in 85 s: `gen_configs_c48` 0.37 s, `gen_configs_cece_valid` 0.09 s, `proto_met_catchem` 29.5 s, `proto_met_catchem_np12` 19.0 s, `proto_cece_met` 26.3 s, `proto_met_catchem_bad_petcount` 0.39 s |
+| CATChem `nuopc_contract_valid`, `test_nuopc_diag_output` (scratch stage, see above) | 2 of 2 passed; `7 emission import(s) bound`, 13 `not bound: category ... not configured or not active`, the named extent error for the `nz + 1` field |
+
+### Caveats
+
+- One CECE instance per executable and one `nz` for all its exports: the 17 surface species cost 127 levels each (40 MB per PET at C48, 160 MB at C96). Per-species export depth in CECE is the follow-up if that matters.
+- A category of the CATChem emission map without a `processes/extemis/<name>` block is active by default: hand-written configs must switch unused categories off explicitly (the generator writes every category).
+- The prune changes the contract of the five pre-existing optional met imports (they become truly optional); UFS provides them today.
+- The generated set has not been run yet (task 6); `gen_configs_cece_valid` and the pytest validator run prove CECE's schema accepts it, nothing more.

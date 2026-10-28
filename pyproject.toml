@@ -123,6 +123,16 @@ ignore_names = [
     "Conventions",
     "title",
     "source",
+    # Read by the vulture-excluded schema modules (task 5).
+    "standard_name_prefix",
+]
+# The generator's schema modules (task 5) mirror the keys of the emitted CATChem, CECE and dictionary files;
+# every field is consumed through model_dump, which vulture cannot see. The generator itself stays checked.
+exclude = [
+    "tools/catchem_yaml.py",
+    "tools/cece_yaml.py",
+    "tools/driver_config.py",
+    "tools/gen_defaults.py",
 ]
 ignore_decorators = [
     "@field_validator",
