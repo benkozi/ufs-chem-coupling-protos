@@ -870,7 +870,12 @@ uv run python -m tools.gen_configs --manifest data/C48/manifest.yaml --out build
 - `proto_cece_met_catchem_unconnected_fails`: that set on 6 PETs in `run_C48_np6_unconnected/`; passes on `cece_met_catchem: Initialize( (user))? failed` on stdout, fails on `MPI_ABORT|ORTE_ERROR_LOG|completed <n> steps`.
 - `log_cece_met_catchem_unconnected`: its PET logs require `RealizeAccepted removed 1 unconnected optional import(s)` and the `has no connected import extemis_anthro_NO (no file fallback)` error, and forbid both open lines. esmApp prints only which phase failed; the named error is in the PET logs, so the message check is this test, not a pass expression on the run.
 
-CATChem's own tests for the switch live in its suite (`tests/test_config_validation.cpp`, `tests/test_nuopc_emis_source.F90` with six `nuopc_emis_source_<case>` tests) and run in CATChem's CI, not in this repository's `ctest`.
+CATChem's own tests for the switch live in its suite (`tests/test_config_validation.cpp`, `tests/test_nuopc_emis_source.F90` with eight `nuopc_emis_source_<case>` tests, `nuopc_contract_multi_de_fails`) and run in CATChem's CI, not in this repository's `ctest`.
+
+### Two CATChem fixes in the same PR
+
+- In `file` mode a failed init-time time-coordinate read (missing or unreadable `source_file`, unparsable time units) now stops initialize: `catchem_emis_read_time_coord: FATAL ERROR: File not found for time coord: <p>` and `catchem_emis_init: FATAL ERROR: Failed timing setup for category: <c>`. It used to be ignored, and the first update then failed on the same file. Point categories are no longer probed for a time coordinate (an `.rc` table has none).
+- The cap stops on a PET holding several DEs of an import field: `CATChem: import field <f> has <n> DEs on this PET; CATChem needs one DE per PET (localDeCount must be 1)`. It used to log `localDeCount must be 1` and run on the last DE's coordinates. The prototype driver's own one-DE-per-PET check is unchanged.
 
 ### Measured (2026-10-29, `tools/ci.sh test ci` on the cloud builder's amd64 node)
 
