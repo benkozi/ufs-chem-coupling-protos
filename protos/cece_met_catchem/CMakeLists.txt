@@ -44,7 +44,9 @@ cece_met_catchem_run(proto_cece_met_catchem_c96 C96 6 120 "mockdata_c96;genconfi
 set(_run_c48 ${CMAKE_CURRENT_BINARY_DIR}/run_C48_np6)
 
 # The PET-log evidence of the C48 run (tests/log_check.cmake): every emission import connected and bound,
-# every category import-fed, every CECE export nz deep and reference-shared into CATChem and MET.
+# every category import-fed, every CECE export nz deep and reference-shared into CATChem and MET; and (task 7)
+# CATChem on processes/extemis/source: nuopc_import opening no emission file: no `CATChem: emission open` and
+# no aqmio read-mode open (DEBUG lines), with a DEBUG line required so a narrowed log cannot pass vacuously.
 file(
   WRITE ${CMAKE_CURRENT_BINARY_DIR}/log_cece_met_catchem.spec
   [=[
@@ -62,6 +64,10 @@ count 20 CATChem: emission import extemis_[a-z]+_[A-Za-z0-9_]+ ShareStatusField=
 forbid ShareStatusField=not shared
 forbid Removed unconnected export field
 forbid owns an open corner ring
+require catchem_emis_init: extemis source=nuopc_import
+require catchem_emis_update: Emission data updated
+forbid CATChem: emission open category=
+forbid AQMIO: open iomode=read path=
 require MET: hosted import extemis_anthro_SO2 ShareStatusField=shared
 require \[Cap\] Kokkos OpenMP threads from the ESMF VM: 1 PE\(s\) on this PET
 below 1200000 cece_met_catchem: memory per PET max virt [0-9]+ KB phys ([0-9]+) KB \(at end\)
@@ -94,6 +100,65 @@ add_test(
 set_tests_properties(
   log_check_below_fails
   PROPERTIES LABELS ci PASS_REGULAR_EXPRESSION "value 2348368 exceeds 1200000" TIMEOUT 60
+)
+
+# The `forbid` failure case: a log with an emission-open line must fail the directive log_cece_met_catchem uses.
+set(_forbid_dir ${CMAKE_CURRENT_BINARY_DIR}/log_check_forbid_fails)
+file(
+  WRITE ${_forbid_dir}/PET0.ESMF_LogFile
+  "20261029 120000.000 DEBUG PET0 CATChem: emission open category=anthro reader=tile path=/x/anthro.nc\n"
+)
+file(WRITE ${_forbid_dir}/forbid.spec "forbid CATChem: emission open category=\n")
+add_test(
+  NAME log_check_forbid_fails
+  COMMAND ${CMAKE_COMMAND} -DRUN_DIR=${_forbid_dir} -DSPEC=${_forbid_dir}/forbid.spec -P ${_log_check}
+)
+set_tests_properties(
+  log_check_forbid_fails
+  PROPERTIES LABELS ci PASS_REGULAR_EXPRESSION "log_check: forbidden line found" TIMEOUT 60
+)
+
+# Task 7: one emission import left unconnected (CECE does not provide extemis_anthro_NO; gen_configs
+# --cece-omit) under source: nuopc_import. CATChem's InitializeP2 refuses it on every PET, so esmApp ends
+# through its collective finalize with the Initialize failure on stdout; the named error is in the PET logs.
+set(_run_unconnected ${CMAKE_CURRENT_BINARY_DIR}/run_C48_np6_unconnected)
+file(MAKE_DIRECTORY ${_run_unconnected})
+add_test(
+  NAME proto_cece_met_catchem_unconnected_fails
+  COMMAND
+    ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 6 ${MPIEXEC_PREFLAGS}
+    $<TARGET_FILE:esmApp> ${PROJECT_BINARY_DIR}/gen/C48_unconnected/esm.configure
+  WORKING_DIRECTORY ${_run_unconnected}
+)
+set_tests_properties(
+  proto_cece_met_catchem_unconnected_fails
+  PROPERTIES
+    FIXTURES_REQUIRED "mockdata;genconfigs_unconnected"
+    FIXTURES_SETUP cece_met_catchem_unconnected_run
+    LABELS ci
+    ENVIRONMENT_MODIFICATION "OMP_NUM_THREADS=unset:"
+    PASS_REGULAR_EXPRESSION "cece_met_catchem: Initialize( \\(user\\))? failed"
+    FAIL_REGULAR_EXPRESSION "MPI_ABORT|ORTE_ERROR_LOG|completed [0-9]+ steps"
+    TIMEOUT 300
+)
+file(
+  WRITE ${CMAKE_CURRENT_BINARY_DIR}/log_cece_met_catchem_unconnected.spec
+  [=[
+require CATChem: RealizeAccepted removed 1 unconnected optional import\(s\)
+require CATChem: extemis source nuopc_import: category anthro has no connected import extemis_anthro_NO \(no file fallback\)
+forbid CATChem: emission open category=
+forbid AQMIO: open iomode=read path=
+]=]
+)
+add_test(
+  NAME log_cece_met_catchem_unconnected
+  COMMAND
+    ${CMAKE_COMMAND} -DRUN_DIR=${_run_unconnected}
+    -DSPEC=${CMAKE_CURRENT_BINARY_DIR}/log_cece_met_catchem_unconnected.spec -P ${_log_check}
+)
+set_tests_properties(
+  log_cece_met_catchem_unconnected
+  PROPERTIES FIXTURES_REQUIRED cece_met_catchem_unconnected_run LABELS ci TIMEOUT 120
 )
 
 # Emissions accumulate in the host tracer field: MET's hourly area-weighted so2 sum grows from zero.

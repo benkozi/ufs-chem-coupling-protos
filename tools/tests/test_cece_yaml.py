@@ -97,3 +97,24 @@ def test_an_unknown_cadence_cannot_be_mapped() -> None:
     with pytest.raises(ValueError, match="cadence"):
         # The point of the test is the value the type forbids.
         cz.stream_timing("weekly")  # type: ignore[arg-type]
+
+
+def test_omitted_variables_are_neither_read_nor_exported(manifest: mf.Manifest) -> None:
+    config = cz.cece_config(
+        manifest, data_root=Path("/root"), amio=AMIO, omit=frozenset({("anthro", "NO")})
+    )
+    streams = {s.name: s for s in config.cece_data.streams}
+    assert "anthro_NO" not in [v.model for v in streams["anthro"].variables]
+    assert "anthro_SO2" in [v.model for v in streams["anthro"].variables]
+    assert "anthro_NO" not in config.species
+    assert "anthro_NO" not in config.nuopc.export_fields
+    assert len(config.nuopc.export_fields) == 19
+
+
+def test_a_category_with_every_variable_omitted_has_no_stream(
+    manifest: mf.Manifest,
+) -> None:
+    omit = frozenset(("dms", v) for v in manifest.categories["dms"].variables)
+    config = cz.cece_config(manifest, data_root=Path("/root"), amio=AMIO, omit=omit)
+    assert "dms" not in {s.name for s in config.cece_data.streams}
+    assert not any(k.startswith("dms_") for k in config.species)

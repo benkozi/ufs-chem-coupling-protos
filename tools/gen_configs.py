@@ -111,6 +111,29 @@ def hosted_rows(
     return rows
 
 
+def omitted_pairs(
+    manifest: mf.Manifest,
+    requests: Sequence[str],
+    hosted: Sequence[dc.HostedImportRow],
+) -> frozenset[tuple[str, str]]:
+    """The --cece-omit <category>/<variable> pairs, each a manifest variable that MET does not host."""
+    pairs: set[tuple[str, str]] = set()
+    hosted_pairs = {(h.category, h.variable) for h in hosted}
+    for request in requests:
+        category, _, variable = request.partition("/")
+        spec = manifest.categories.get(category)
+        if spec is None or variable not in spec.variables:
+            raise UsageError(
+                f"--cece-omit {request}: not a <category>/<variable> of the manifest"
+            )
+        if (category, variable) in hosted_pairs:
+            raise UsageError(
+                f"--cece-omit {request}: MET hosts this import, it cannot be left unconnected"
+            )
+        pairs.add((category, variable))
+    return frozenset(pairs)
+
+
 def generate(
     *,
     manifest_path: Path,
@@ -121,6 +144,7 @@ def generate(
     defaults_file: Path,
     source_files: bool,
     command: str,
+    cece_omit: Sequence[str] = (),
 ) -> GeneratedSet:
     settings = get_settings()
     manifest_path = manifest_path.resolve()
@@ -141,6 +165,7 @@ def generate(
             f"regdecomp {regdecomp[0]} x {regdecomp[1]} must equal the PET count per tile {pets // settings.n_tiles}"
         )
     hosted = hosted_rows(manifest, defaults, data_root)
+    omit = omitted_pairs(manifest, cece_omit, hosted)
     species_file = repo_path(settings.catchem_species_file)
     emission_map = cy.emission_map(manifest, defaults)
     cy.check_emission_targets(emission_map, cy.species_names(species_file))
@@ -159,7 +184,7 @@ def generate(
         "mapping": out / settings.catchem_mapping_filename,
         "driver": out / settings.driver_config_filename,
     }
-    cz.cece_config(manifest, data_root, defaults.cece_amio).to_yaml(paths["cece"])
+    cz.cece_config(manifest, data_root, defaults.cece_amio, omit).to_yaml(paths["cece"])
     dc.with_emission_entries(base_dictionary, manifest).to_yaml(paths["dictionary"])
     cy.science_config(
         manifest,
@@ -170,7 +195,10 @@ def generate(
         data_root=data_root,
     ).to_yaml(paths["science"])
     emission_map.to_yaml(paths["emission"])
-    cy.merged_mapping(base_mapping, manifest).to_yaml(paths["mapping"])
+    # The file-path run advertises no emission import, so CATChem's readers feed every category.
+    cy.merged_mapping(base_mapping, manifest, advertise=not source_files).to_yaml(
+        paths["mapping"]
+    )
     dc.DriverConfig(
         prototype=defaults.prototype,
         components=["CECE", "MET", "CATCHEM"],
@@ -256,7 +284,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--catchem-source-files",
         action="store_true",
-        help="write the manifest's inventory paths as source_file (the file-path comparison run)",
+        help="the file-path comparison run: source: file, the manifest's inventory paths as source_file, "
+        "and no emission import advertised",
+    )
+    parser.add_argument(
+        "--cece-omit",
+        action="append",
+        default=[],
+        metavar="CATEGORY/VARIABLE",
+        help="leave this emission import unconnected: CECE neither reads nor exports it (repeatable; "
+        "the unconnected-import failure case)",
     )
     parser.add_argument(
         "--log-level",
@@ -283,6 +320,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             data_root=(args.data_root or Path.cwd()).resolve(),
             defaults_file=repo_path(args.defaults or settings.gen_defaults_file),
             source_files=args.catchem_source_files,
+            cece_omit=args.cece_omit,
             command=" ".join(["gen_configs", *args_list]),
         )
     except (UsageError, cy.ConfigError, pydantic.ValidationError) as exc:

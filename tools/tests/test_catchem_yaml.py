@@ -152,6 +152,8 @@ def test_science_config_switches_the_gridded_categories_to_imports(
     assert doc["processes"]["seasalt"]["scheme"] == "geos12"
     ext = doc["processes"]["extemis"]
     assert ext["activate"] is True
+    # task 7: every category from imports, CATChem opens no emission file
+    assert ext["source"] == "nuopc_import"
     assert ext["point"] == {"activate": False, "gridded": False}
     for name in manifest.categories:
         block = ext[name]
@@ -189,6 +191,29 @@ def test_science_config_can_name_the_manifest_files(
         doc["processes"]["extemis"]["anthro"]["source_file"]
         == "/root/data/C48/inventories/anthro.nc"
     )
+    assert doc["processes"]["extemis"]["source"] == "file"
+    assert doc["processes"]["extemis"]["point"] == {
+        "activate": False,
+        "gridded": False,
+    }
+    assert cy.ScienceConfig.from_mapping(doc) == config
+
+
+def test_an_absent_source_reads_back_as_catchems_default() -> None:
+    ext = cy.Extemis.from_mapping({"activate": True, "global_diagnostics": False})
+    assert ext.source == "file"
+
+
+def test_source_takes_only_catchems_two_values() -> None:
+    with pytest.raises(pydantic.ValidationError, match="source"):
+        cy.Extemis.from_mapping({"activate": True, "source": "cece"})
+
+
+def test_emission_entries_can_be_left_unadvertised(manifest: mf.Manifest) -> None:
+    entries = cy.emission_entries(manifest, advertise=False)
+    assert len(entries) == 20
+    assert not any(e.advertise for e in entries)
+    assert all(e.optional for e in entries)
 
 
 def test_science_config_rejects_unknown_extemis_keys() -> None:

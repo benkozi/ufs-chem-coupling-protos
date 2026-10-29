@@ -145,8 +145,16 @@ def stream_timing(cadence: mf.Cadence) -> tuple[StreamCadence, TaxMode]:
 
 
 def cece_config(
-    manifest: mf.Manifest, data_root: Path, amio: gd.CeceAmio
+    manifest: mf.Manifest,
+    data_root: Path,
+    amio: gd.CeceAmio,
+    omit: frozenset[tuple[str, str]] = frozenset(),
 ) -> CeceConfig:
+    """The CECE YAML for the manifest; `omit` (category, variable) pairs are neither read nor exported.
+
+    `omit` exists for the unconnected-import failure case (gen_configs --cece-omit): CATChem still advertises
+    the field, CECE does not provide it. A category with every variable omitted has no stream.
+    """
     nz = manifest.clock.n_levels
     streams: list[Stream] = []
     species: dict[str, list[SpeciesLayer]] = {}
@@ -160,7 +168,10 @@ def cece_config(
                 levels=nz if category.is_3d else 1,
             )
             for variable in category.variables
+            if (name, variable) not in omit
         ]
+        if not variables:
+            continue
         streams.append(
             Stream(
                 name=name,
@@ -173,6 +184,8 @@ def cece_config(
             )
         )
         for variable, spec in category.variables.items():
+            if (name, variable) in omit:
+                continue
             key = species_key(name, variable)
             species[key] = [SpeciesLayer(field=key)]
             exports[key] = ExportField(
