@@ -85,6 +85,32 @@ def validate_cece_file(path: Path) -> list[str]:
     return [f"{display}:{line}: {message}" for display, line, message in errors]
 
 
+def hosted_rows(
+    manifest: mf.Manifest, defaults: gd.GenDefaults, data_root: Path
+) -> list[dc.HostedImportRow]:
+    """The met_hosted_imports:: rows of the defaults' hosted imports, checked against the manifest."""
+    rows: list[dc.HostedImportRow] = []
+    if defaults.hosted_imports and "CECE -> MET" not in defaults.run_sequence:
+        raise UsageError(
+            "hosted imports need `CECE -> MET` in run_sequence (the driver adds only the connectors runSeq:: names)"
+        )
+    for h in defaults.hosted_imports:
+        category = manifest.categories.get(h.category)
+        if category is None or h.variable not in category.variables:
+            raise UsageError(
+                f"hosted import {h.category}/{h.variable} is not a variable of the manifest"
+            )
+        rows.append(
+            dc.HostedImportRow(
+                standard_name=cy.standard_name(h.category, h.variable),
+                category=h.category,
+                variable=h.variable,
+                file=cy.rooted(category.file, data_root),
+            )
+        )
+    return rows
+
+
 def generate(
     *,
     manifest_path: Path,
@@ -114,6 +140,7 @@ def generate(
         raise UsageError(
             f"regdecomp {regdecomp[0]} x {regdecomp[1]} must equal the PET count per tile {pets // settings.n_tiles}"
         )
+    hosted = hosted_rows(manifest, defaults, data_root)
     species_file = repo_path(settings.catchem_species_file)
     emission_map = cy.emission_map(manifest, defaults)
     cy.check_emission_targets(emission_map, cy.species_names(species_file))
@@ -132,7 +159,7 @@ def generate(
         "mapping": out / settings.catchem_mapping_filename,
         "driver": out / settings.driver_config_filename,
     }
-    cz.cece_config(manifest, data_root).to_yaml(paths["cece"])
+    cz.cece_config(manifest, data_root, defaults.cece_amio).to_yaml(paths["cece"])
     dc.with_emission_entries(base_dictionary, manifest).to_yaml(paths["dictionary"])
     cy.science_config(
         manifest,
@@ -158,6 +185,7 @@ def generate(
         regdecomp=regdecomp,
         step_seconds=manifest.clock.step_seconds,
         run_sequence=list(defaults.run_sequence),
+        hosted_imports=hosted,
     ).write(paths["driver"])
     errors = validate_cece_file(paths["cece"])
     if errors:

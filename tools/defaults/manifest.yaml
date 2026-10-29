@@ -525,3 +525,24 @@ met:
       units: ug/kg
     - name: seas5
       units: ug/kg
+    # Task 6: the species the emission map applies (gases in kg/kg, aerosols in ug/kg), so emissions
+    # accumulate in the host's tracer field across steps; dms_in stays CATChem-internal (neither gas nor
+    # aerosol in CATChem's species file, which the cap rejects as a tracer).
+    - name: so2
+      units: kg/kg
+    - name: no3
+      units: kg/kg
+    - name: oh
+      units: kg/kg
+    - name: h2o2
+      units: kg/kg
+    - name: so4
+      units: ug/kg
+    - name: oc1
+      units: ug/kg
+    - name: oc2
+      units: ug/kg
+    - name: bc1
+      units: ug/kg
+    - name: bc2
+      units: ug/kg

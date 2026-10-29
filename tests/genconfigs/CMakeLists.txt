@@ -34,3 +34,37 @@ set_tests_properties(
   gen_configs_cece_valid
   PROPERTIES FIXTURES_REQUIRED genconfigs LABELS ci TIMEOUT 120
 )
+
+# Task 6: the C96 set for proto_cece_met_catchem_c96 (label c96, after the C96 mock data).
+add_test(
+  NAME gen_configs_c96
+  COMMAND
+    ${UV_EXECUTABLE} run --no-sync python -m tools.gen_configs
+    --manifest data/C96/manifest.yaml --out ${PROJECT_BINARY_DIR}/gen/C96 --pets 6
+  WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+)
+set_tests_properties(
+  gen_configs_c96
+  PROPERTIES
+    FIXTURES_REQUIRED mockdata_c96
+    FIXTURES_SETUP genconfigs_c96
+    LABELS c96
+    TIMEOUT 120
+)
+
+# Task 6: a 12-PET C48 set (2 DEs per tile) for the corner-ring failure case of proto_cece_met_catchem.
+add_test(
+  NAME gen_configs_c48_np12
+  COMMAND
+    ${UV_EXECUTABLE} run --no-sync python -m tools.gen_configs
+    --manifest data/C48/manifest.yaml --out ${PROJECT_BINARY_DIR}/gen/C48_np12 --pets 12
+  WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+)
+set_tests_properties(
+  gen_configs_c48_np12
+  PROPERTIES
+    FIXTURES_REQUIRED mockdata
+    FIXTURES_SETUP genconfigs_np12
+    LABELS ci
+    TIMEOUT 120
+)

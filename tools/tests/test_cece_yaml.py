@@ -8,7 +8,15 @@ import pytest
 import yaml
 
 from tools import cece_yaml as cz
+from tools import gen_defaults as gd
 from tools import manifest as mf
+
+AMIO = gd.CeceAmio(
+    worker_threads=1,
+    staging_buffer_count=2,
+    staging_buffer_capacity_bytes=4194304,
+    prefetch_depth=1,
+)
 
 
 @pytest.fixture
@@ -32,7 +40,7 @@ def test_every_field_of_every_model_has_a_description() -> None:
 
 
 def test_config_follows_the_manifest(manifest: mf.Manifest) -> None:
-    config = cz.cece_config(manifest, data_root=Path("/root"))
+    config = cz.cece_config(manifest, data_root=Path("/root"), amio=AMIO)
     assert config.driver.start_time == "2021-03-22T06:00:00"
     assert config.driver.end_time == "2021-03-23T06:00:00"
     assert config.driver.timestep_seconds == 720
@@ -49,7 +57,8 @@ def test_config_follows_the_manifest(manifest: mf.Manifest) -> None:
     assert streams["anthro"].mapalgo == "consd"
     assert streams["gmi"].mapalgo == "bilinear"
     assert [v.levels for v in streams["gmi"].variables] == [127, 127, 127]
-    assert all(v.levels is None for v in streams["anthro"].variables)
+    # a variable without `levels` inherits driver.grid.nz in CECE (cece_io.cpp), so a 2-D one declares 1
+    assert all(v.levels == 1 for v in streams["anthro"].variables)
     assert [v.model for v in streams["anthro"].variables][:2] == [
         "anthro_NO",
         "anthro_SO2",
@@ -68,7 +77,7 @@ def test_yaml_quotes_the_boolean_looking_names(
     manifest: mf.Manifest, tmp_path: Path
 ) -> None:
     path = tmp_path / "cece.yaml"
-    cz.cece_config(manifest, data_root=Path("/root")).to_yaml(path)
+    cz.cece_config(manifest, data_root=Path("/root"), amio=AMIO).to_yaml(path)
     text = path.read_text()
     assert "file: 'NO'" in text
     doc = yaml.safe_load(text)
@@ -76,7 +85,12 @@ def test_yaml_quotes_the_boolean_looking_names(
     assert "local_time" not in doc
     assert "gridspec_file" not in doc["driver"]
     assert doc["driver"]["grid"] == {"nz": 127}
-    assert "levels" not in doc["cece_data"]["streams"][0]["variables"][0]
+    assert doc["cece_data"]["streams"][0]["variables"][0]["levels"] == 1
+    # CECE's AMIO staging pools, one per data file, sized by the generator (the defaults fill 2.1 GB per PET)
+    assert doc["driver"]["amio_worker_threads"] == 1
+    assert doc["driver"]["amio_staging_buffer_count"] == 2
+    assert doc["driver"]["amio_staging_buffer_capacity_bytes"] == 4194304
+    assert doc["driver"]["amio_prefetch_depth"] == 1
 
 
 def test_an_unknown_cadence_cannot_be_mapped() -> None:

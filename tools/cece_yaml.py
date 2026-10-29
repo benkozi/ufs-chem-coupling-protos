@@ -2,9 +2,10 @@
 
 One CECE component has one `driver.grid.nz` (its cap realizes every export with that depth and keeps its config
 path in module globals, so there is one instance per executable): `nz` is the manifest's level count, a surface
-category's stream variable is 2-D in CECE and its species layer keeps the default vertical distribution
-(`single`, layer 0), so the flux sits in export level 1; the 3-D category declares `levels` and is exported level
-for level without a flip. Stream paths are absolute (CECE resolves them against the process directory).
+category's stream variable declares `levels: 1` (CECE gives a variable without `levels` the grid's nz,
+`cece_io.cpp`, and then refuses a 2-D record; task 6) and its species layer keeps the default vertical
+distribution (`single`, layer 0), so the flux sits in export level 1; the 3-D category declares `levels: nz`
+and is exported level for level without a flip. Stream paths are absolute (CECE resolves them against the process directory).
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from typing import Literal
 import yaml
 from pydantic import Field
 
+from tools import gen_defaults as gd
 from tools import manifest as mf
 from tools.catchem_yaml import rooted, species_key, standard_name
 from tools.manifest import Strict
@@ -44,14 +46,26 @@ class Driver(Strict):
     grid: DriverGrid = Field(
         description="The only grid key CECE reads on the parent-grid path."
     )
+    amio_worker_threads: int = Field(
+        description="AMIO background I/O threads per PET (cece_amio).", gt=0
+    )
+    amio_staging_buffer_count: int = Field(
+        description="AMIO staging buffers per data file per PET (cece_amio).", gt=0
+    )
+    amio_staging_buffer_capacity_bytes: int = Field(
+        description="Nominal bytes per AMIO staging buffer (cece_amio).", gt=0
+    )
+    amio_prefetch_depth: int = Field(
+        description="AMIO records read ahead per data file (cece_amio).", gt=0
+    )
 
 
 class StreamVariable(Strict):
     file: str = Field(description="Variable name in the inventory file.")
     model: str = Field(description="CECE field name, <category>_<variable>.")
-    levels: int | None = Field(
-        default=None,
-        description="Declared level count of a 3-D variable (CECE refuses one that differs from nz).",
+    levels: int = Field(
+        description="Declared level count: 1 for a 2-D variable, nz for a 3-D one (CECE refuses any other value above 1, and a missing one means nz).",
+        gt=0,
     )
 
 
@@ -130,7 +144,9 @@ def stream_timing(cadence: mf.Cadence) -> tuple[StreamCadence, TaxMode]:
     raise ValueError(f"unknown cadence {cadence!r}")
 
 
-def cece_config(manifest: mf.Manifest, data_root: Path) -> CeceConfig:
+def cece_config(
+    manifest: mf.Manifest, data_root: Path, amio: gd.CeceAmio
+) -> CeceConfig:
     nz = manifest.clock.n_levels
     streams: list[Stream] = []
     species: dict[str, list[SpeciesLayer]] = {}
@@ -141,7 +157,7 @@ def cece_config(manifest: mf.Manifest, data_root: Path) -> CeceConfig:
             StreamVariable(
                 file=variable,
                 model=species_key(name, variable),
-                levels=nz if category.is_3d else None,
+                levels=nz if category.is_3d else 1,
             )
             for variable in category.variables
         ]
@@ -168,6 +184,10 @@ def cece_config(manifest: mf.Manifest, data_root: Path) -> CeceConfig:
             end_time=manifest.clock.end.strftime("%Y-%m-%dT%H:%M:%S"),
             timestep_seconds=manifest.clock.step_seconds,
             grid=DriverGrid(nz=nz),
+            amio_worker_threads=amio.worker_threads,
+            amio_staging_buffer_count=amio.staging_buffer_count,
+            amio_staging_buffer_capacity_bytes=amio.staging_buffer_capacity_bytes,
+            amio_prefetch_depth=amio.prefetch_depth,
         ),
         species=species,
         cece_data=CeceData(streams=streams),

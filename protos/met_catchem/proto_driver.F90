@@ -119,6 +119,15 @@ contains
     do t = 1, N_TILES
       reg_decomp(:, t) = decomp
     end do
+    ! CECE's host-block path needs a closed corner ring per DE, i.e. one DE per tile: with several, the PETs
+    ! whose block does not reach the tile's upper edges fail inside CECE's initialize while the others wait in
+    ! a collective (a hang). Refuse it here, on every PET, before any component starts. Corner halo: task 9.
+    if (per_tile > 1 .and. any(comp_labels == "CECE")) then
+      write (msg, '(a,i0,a,i0,a)') "met_catchem: CECE needs one DE per tile (6 PETs), got ", per_tile, &
+        " per tile (", pet_count, " PETs); its host-block path has no corner halo yet"
+      call fail(local_pet, trim(msg), rc)
+      return
+    end if
 
     ! --- the grid, once: from the task-2 mosaic (tileFilePath: the mosaic's gridlocation is a stale HPC path),
     !     or analytic for the file-free debug mode ---

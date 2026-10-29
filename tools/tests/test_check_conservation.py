@@ -237,3 +237,73 @@ def test_worst_picks_the_record_furthest_over_its_tolerance() -> None:
     )
     # nothing exceeded: the largest ratio still names the worst record
     assert cc.worst(comparisons[:1], rtol=1.0, atol=1.0) == (0.1, START, 1, False)
+
+
+@pytest.fixture
+def deep_files(tmp_path: Path) -> tuple[Path, Path]:
+    """A one-level inventory against an nz-deep surface export: the flux in level 1, zero above."""
+    hourly = stamps(25, timedelta(hours=1))
+    expected = write_totals(
+        tmp_path / "totals.yaml", hourly, [[1000.0 + 10.0 * k] for k in range(25)]
+    )
+    steps = stamps(120, timedelta(seconds=720))
+    actual = write_totals(
+        tmp_path / "met_import_totals.yaml",
+        steps,
+        [[1000.0 + 2.0 * k, 0.0, 0.0] for k in range(120)],
+    )
+    return expected, actual
+
+
+def test_level_selects_one_level_of_a_deeper_export(
+    deep_files: tuple[Path, Path], caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level(logging.INFO, logger="protos"):
+        assert cc.main(args(*deep_files, "--level", "1", "--rtol", "1e-15")) == 0
+    assert "24 matched records" in caplog.text
+    assert "level 1 within" in caplog.text
+
+
+def test_without_level_a_deeper_export_is_still_a_usage_error(
+    deep_files: tuple[Path, Path],
+) -> None:
+    assert cc.main(args(*deep_files)) == 2
+
+
+def test_zero_above_passes_when_the_levels_above_are_zero(
+    deep_files: tuple[Path, Path],
+) -> None:
+    assert cc.main(args(*deep_files, "--level", "1", "--zero-above")) == 0
+
+
+def test_zero_above_fails_on_a_non_zero_level_and_names_it(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    hourly = stamps(25, timedelta(hours=1))
+    expected = write_totals(tmp_path / "totals.yaml", hourly, [[1.0]] * 25)
+    actual = write_totals(
+        tmp_path / "met.yaml", hourly, [[1.0, 0.0, 0.0]] * 24 + [[1.0, 0.0, 5.0e-30]]
+    )
+    with caplog.at_level(logging.INFO, logger="protos"):
+        assert cc.main(args(expected, actual, "--level", "1", "--zero-above")) == 1
+    assert "level 3" in caplog.text
+    assert "is not zero" in caplog.text
+
+
+def test_level_beyond_either_file_is_a_usage_error(
+    deep_files: tuple[Path, Path],
+) -> None:
+    assert cc.main(args(*deep_files, "--level", "2")) == 2
+    assert cc.main(args(*deep_files, "--level", "4")) == 2
+
+
+def test_zero_above_needs_level(deep_files: tuple[Path, Path]) -> None:
+    with pytest.raises(SystemExit) as exc:
+        cc.main(args(*deep_files, "--zero-above"))
+    assert exc.value.code == 2
+
+
+def test_level_must_be_positive(deep_files: tuple[Path, Path]) -> None:
+    with pytest.raises(SystemExit) as exc:
+        cc.main(args(*deep_files, "--level", "0"))
+    assert exc.value.code == 2

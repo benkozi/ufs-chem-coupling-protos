@@ -506,6 +506,9 @@ contains
     end if
     call fill_exports(s, exportState, now, rc); if (rc /= ESMF_SUCCESS) return
     call record_hosted(s, importState, now, rc); if (rc /= ESMF_SUCCESS) return
+    if (s%catchem_present) then
+      call log_tracer_sums(s, tout, now, rc); if (rc /= ESMF_SUCCESS) return
+    end if
     s%step = s%step + 1
     if (s%step == 1 .or. mod(s%step, 10) == 0) then
       call ESMF_TimeGet(now, timeString=stamp, rc=rc)
@@ -519,6 +522,35 @@ contains
       end if
     end if
   end subroutine Advance
+
+  !> On the hour, the global area-weighted sum over all levels of every tracer slot but sphum as CATChem
+  !! left it (sum of q x cell area, ESMF_VMAllFullReduce per tracer), one line per tracer on every PET: the evidence
+  !! that emissions accumulate in the host's tracer field (task 6 checks so2 growing from zero).
+  subroutine log_tracer_sums(s, q, now, rc)
+    type(met_state), intent(inout) :: s
+    real(rk), pointer, intent(in) :: q(:, :, :, :)
+    type(ESMF_Time), intent(in) :: now
+    integer, intent(out) :: rc
+    real(rk) :: local_sum(1), total
+    character(len=32) :: stamp
+    integer :: j, k
+    rc = ESMF_SUCCESS
+    call ESMF_TimeGet(now, timeString=stamp, rc=rc)
+    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
+    ! on the hour only: the ISO string's mm:ss (YYYY-MM-DDThh:mm:ss)
+    if (stamp(15:19) /= "00:00") return
+    do j = 1, s%ntr
+      if (j == s%sphum) cycle
+      local_sum(1) = 0.0_rk
+      do k = lbound(q, 3), ubound(q, 3)
+        local_sum(1) = local_sum(1) + sum(q(:, :, k, j) * s%area)
+      end do
+      call ESMF_VMAllFullReduce(s%vm, local_sum, total, 1, ESMF_REDUCE_SUM, rc=rc)
+      if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
+      call ESMF_LogWrite("MET: tracer "//trim(s%m%tracers(j)%name)//" area-weighted sum "//ftoa(total)// &
+                         " at "//trim(stamp), ESMF_LOGMSG_INFO)
+    end do
+  end subroutine log_tracer_sums
 
   !> One record per step for every hosted import: the global sum of field x cell area per level
   !! (ESMF_VMAllFullReduce), stamped with the provider's export timestamp (CECE stamps at step start) and

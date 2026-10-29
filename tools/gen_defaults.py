@@ -68,6 +68,35 @@ class DiagnosticsDefaults(Strict):
     diag_list: list[str] = Field(description="Species written to the diagnostics.")
 
 
+class HostedImport(Strict):
+    category: str = Field(description="Manifest category of the CECE export MET hosts.")
+    variable: str = Field(
+        description="Manifest variable of that category; the export is extemis_<category>_<variable>."
+    )
+
+
+class CeceAmio(Strict):
+    worker_threads: int = Field(
+        description="driver.amio_worker_threads: AMIO background I/O threads per PET.",
+        gt=0,
+    )
+    staging_buffer_count: int = Field(
+        description="driver.amio_staging_buffer_count: staging buffers per data file per PET.",
+        gt=0,
+    )
+    staging_buffer_capacity_bytes: int = Field(
+        description=(
+            "driver.amio_staging_buffer_capacity_bytes: nominal bytes per staging buffer; a record larger "
+            "than this still gets a buffer of its own size."
+        ),
+        gt=0,
+    )
+    prefetch_depth: int = Field(
+        description="driver.amio_prefetch_depth: records read ahead per data file.",
+        gt=0,
+    )
+
+
 class GenDefaults(Strict):
     prototype: str = Field(
         description="The run's name: `prototype:` of the driver config and the science config's simulation name."
@@ -85,6 +114,25 @@ class GenDefaults(Strict):
     run_sequence: list[str] = Field(
         description="Lines of the driver's runSeq:: block inside the coupling-step loop, in order.",
         min_length=1,
+    )
+    hosted_imports: list[HostedImport] = Field(
+        default_factory=list,
+        description=(
+            "CECE exports MET also consumes (met_hosted_imports::) and writes per-level totals of, as a second "
+            "reference-sharing consumer next to CATChem; the conservation check reads those totals."
+        ),
+    )
+    catchem_units: dict[str, str] = Field(
+        description=(
+            "Manifest (CF) unit string -> the spelling CATChem's emission map needs: catchem_emis_apply converts "
+            "only its own spellings (kg/m2/s, mol/mol, molec/cm3, nmol/l) and applies anything else as zero."
+        )
+    )
+    cece_amio: CeceAmio = Field(
+        description=(
+            "CECE's AMIO staging-pool sizes, written into cece.yaml's driver block. CECE's defaults (8 "
+            "buffers of 32 MiB, prefetch 2, one pool per data file) fill about 2.1 GB per PET at C48."
+        )
     )
     categories: dict[str, CategoryDefaults] = Field(
         description="Per-category CATChem settings and emission map, by manifest category name."

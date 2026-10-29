@@ -165,7 +165,25 @@ def test_met_params_carry_what_the_met_component_reads(tmp_path: Path) -> None:
     assert met.roughness_length_ocean_cm < met.roughness_length_land_cm
     names = [t.name for t in met.tracers]
     assert names[0] == "sphum"
-    assert names[1:] == ["seas1", "seas2", "seas3", "seas4", "seas5"]
+    # task 6: the species the emission map applies with `add`, plus the three gmi oxidants; dms_in is
+    # CATChem-internal (neither gas nor aerosol in the species file, so the cap would reject it as a tracer)
+    assert names[1:] == [
+        "seas1",
+        "seas2",
+        "seas3",
+        "seas4",
+        "seas5",
+        "so2",
+        "no3",
+        "oh",
+        "h2o2",
+        "so4",
+        "oc1",
+        "oc2",
+        "bc1",
+        "bc2",
+    ]
+    assert "dms_in" not in names
     assert all(t.units for t in met.tracers)
     assert {t.units for t in met.tracers} == {"kg/kg", "ug/kg"}
 
@@ -198,8 +216,9 @@ def test_pressure_top_must_be_below_the_surface_pressure(tmp_path: Path) -> None
 # sha256 of the canonical JSON dump of ManifestDefaults from tools/defaults/manifest.yaml. Task 2's value
 # (4a9c0448…) equalled the defaults reviewed in PR #4's first commit (51f1cea, Python literals) except for four
 # amplitudes rounded to their intended literals; task 3 added the twenty `met` parameters the MET component
-# reads (soil layers, column, surface, geography, tracers), which is the only change since.
-DEFAULTS_DIGEST = "674d5348184a14f8fe6cb335a280fafba5334392fd4d34faa1032d806441624e"
+# reads (soil layers, column, surface, geography, tracers); task 6 added nine host tracers (so2, no3, oh, h2o2,
+# so4, oc1, oc2, bc1, bc2), the only change since.
+DEFAULTS_DIGEST = "1327c7982a3a1f5e6a3f4b1e6b45149c2e771e724d9462bb7495b7eb0ed3a717"
 
 
 def test_checked_in_defaults_validate_and_are_pinned() -> None:
@@ -261,3 +280,19 @@ def test_strict_models_round_trip_through_yaml_generically(tmp_path: Path) -> No
     )
     grid.to_yaml(tmp_path / "sub" / "grid.yaml")
     assert mf.LatLonGrid.from_yaml(tmp_path / "sub" / "grid.yaml") == grid
+
+
+def test_default_tracers_are_gas_or_aerosol_species_with_matching_units(
+    tmp_path: Path,
+) -> None:
+    """The cap requires a mechanism tracer to be exactly one of gas (kg/kg, ppm) or aerosol (ug/kg, kg/kg, ppm)."""
+    path = Path(__file__).resolve().parents[2] / get_settings().catchem_species_file
+    species = {s["name"]: s for s in yaml.safe_load(path.read_text())}
+    for tracer in make(tmp_path).met.tracers:
+        if tracer.name == "sphum":
+            continue
+        entry = species[tracer.name]
+        gas = bool(entry.get("__is_gas", False))
+        aerosol = bool(entry.get("__is_aerosol", False))
+        assert gas != aerosol, f"{tracer.name}: gas={gas} aerosol={aerosol}"
+        assert tracer.units == ("kg/kg" if gas else "ug/kg"), tracer.name

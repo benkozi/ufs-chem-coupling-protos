@@ -54,10 +54,13 @@ jobs:
           else
             echo "to=" >> "$GITHUB_OUTPUT"
           fi
+      # Every build names `target: final`: the Dockerfile ends in `test-out`, a FROM-scratch export stage
+      # with no shell, which an untargeted build would produce.
       - name: Build image (warm the registry cache)
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
         with:
           context: .
+          target: final
           push: false
           cache-from: |
             type=registry,ref=${{ env.CACHE_REF }}
@@ -91,6 +94,7 @@ jobs:
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
         with:
           context: .
+          target: final
           push: true
           tags: ${{ env.CI_IMAGE }}
           cache-from: |
@@ -156,6 +160,7 @@ jobs:
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
         with:
           context: .
+          target: final
           push: true
           tags: ${{ env.CI_IMAGE }}
           cache-from: |
@@ -218,6 +223,7 @@ jobs:
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
         with:
           context: .
+          target: final
           push: true
           tags: ${{ env.CI_IMAGE }}
           cache-from: |

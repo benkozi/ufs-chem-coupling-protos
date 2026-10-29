@@ -64,8 +64,10 @@ program esmApp
   call check(rc, "SetServices", __LINE__); call check(user_rc, "SetServices (user)", __LINE__)
   call ESMF_GridCompInitialize(driver, userRc=user_rc, rc=rc)
   call check(rc, "Initialize", __LINE__); call check(user_rc, "Initialize (user)", __LINE__)
+  call report_memory("after init")
   call ESMF_GridCompRun(driver, userRc=user_rc, rc=rc)
   call check(rc, "Run", __LINE__); call check(user_rc, "Run (user)", __LINE__)
+  call report_memory("at end")
   call ESMF_GridCompGet(driver, clock=clock, rc=rc)
   call check(rc, "ESMF_GridCompGet clock", __LINE__)
   call ESMF_ClockGet(clock, advanceCount=steps, currTime=now, rc=rc)
@@ -83,6 +85,23 @@ program esmApp
   call ESMF_Finalize(rc=rc)
 
 contains
+
+  !> Per-PET memory (ESMF_VMGetMemInfo, KB, current not peak; NUOPC_Compliance_Base.F90 2307-2397 is the
+  !! 8.9.1 caller): every PET logs its own numbers, PET 0 prints the maxima over PETs (ESMF_VMAllReduce).
+  subroutine report_memory(when)
+    character(len=*), intent(in) :: when
+    integer :: mine(2), most(2)
+    character(len=256) :: line
+    call ESMF_VMGetMemInfo(mine(1), mine(2), rc=rc)
+    call check(rc, "ESMF_VMGetMemInfo", __LINE__)
+    write (line, '(a,i0,a,i0,a)') trim(name)//": memory of this PET virt ", mine(1), " KB phys ", mine(2), " KB ("//when//")"
+    call ESMF_LogWrite(trim(line), ESMF_LOGMSG_INFO, rc=rc)
+    call ESMF_VMAllReduce(vm, sendData=mine, recvData=most, count=2, reduceflag=ESMF_REDUCE_MAX, rc=rc)
+    call check(rc, "ESMF_VMAllReduce memory", __LINE__)
+    write (line, '(a,i0,a,i0,a)') trim(name)//": memory per PET max virt ", most(1), " KB phys ", most(2), " KB ("//when//")"
+    call ESMF_LogWrite(trim(line), ESMF_LOGMSG_INFO, rc=rc)
+    if (local_pet == 0) print '(a)', trim(line)
+  end subroutine report_memory
 
   !> A failed call, decided collectively: every PET reaches this reduce after every checked call, so a failure
   !! on any PET ends the run on all of them through a normal ESMF_Finalize (MPI_Finalize, every rank's stdout
