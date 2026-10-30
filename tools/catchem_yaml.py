@@ -3,8 +3,8 @@
 Naming: an emission import is the mapping entry `standard_name: <prefix>_<category>_<variable>`,
 `catchem_var: <prefix>/<category>/<variable>` (prefix `extemis`), rank 3 on the model levels (one CECE instance
 has one nz; a surface category carries its flux in level 1), optional and advertised. The science config
-switches every gridded manifest category to the import path (no source_file, no time interpolation: CECE did
-both) and keeps point sources off. The models mirror the keys CATChem's Fortran and C++ readers take.
+sets `processes.extemis.source: nuopc_import` (every gridded manifest category from imports, no source_file, no
+time interpolation: CECE did both; CATChem opens no emission file) and keeps point sources off. The models mirror the keys CATChem's Fortran and C++ readers take.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ from tools.manifest import Strict
 from tools.settings import get_settings
 
 Frequency = Literal["hourly", "monthly", "static"]
+Source = Literal["file", "nuopc_import"]
 
 
 class ConfigError(Exception):
@@ -127,8 +128,14 @@ def is_emission_entry(entry: FieldMappingEntry) -> bool:
     return entry.catchem_var.startswith(f"{get_settings().standard_name_prefix}/")
 
 
-def emission_entries(manifest: mf.Manifest) -> list[FieldMappingEntry]:
-    """One optional, advertised rank-3 entry per gridded category and variable of the manifest."""
+def emission_entries(
+    manifest: mf.Manifest, *, advertise: bool = True
+) -> list[FieldMappingEntry]:
+    """One optional rank-3 entry per gridded category and variable of the manifest, advertised by default.
+
+    `advertise=False` is the file-path comparison run (gen_configs --catchem-source-files): CATChem then
+    advertises no emission import, nothing connects, and its readers take every category from the files.
+    """
     return [
         FieldMappingEntry(
             standard_name=standard_name(category, variable),
@@ -137,18 +144,20 @@ def emission_entries(manifest: mf.Manifest) -> list[FieldMappingEntry]:
             vertical_axis="level",
             units=spec.units,
             optional=True,
-            advertise=True,
+            advertise=advertise,
         )
         for category, cat in manifest.categories.items()
         for variable, spec in cat.variables.items()
     ]
 
 
-def merged_mapping(base: FieldMapping, manifest: mf.Manifest) -> FieldMapping:
+def merged_mapping(
+    base: FieldMapping, manifest: mf.Manifest, *, advertise: bool = True
+) -> FieldMapping:
     """The base mapping without its emission entries, plus the manifest's; idempotent."""
     kept = [e for e in base.import_fields if not is_emission_entry(e)]
     return FieldMapping(
-        import_fields=kept + emission_entries(manifest),
+        import_fields=kept + emission_entries(manifest, advertise=advertise),
         export_fields=list(base.export_fields),
     )
 
@@ -359,6 +368,11 @@ class Extemis(Strict):
         description="The external-emissions switch (the reader defaults it to true when absent)."
     )
     global_diagnostics: bool = Field(description="Diagnostics of every category.")
+    source: Source = Field(
+        default="file",
+        description="Where every category's inputs come from: nuopc_import (connected imports only) or file "
+        "(CATChem's readers); CATChem's default when the key is absent is file.",
+    )
     categories: dict[str, ExtemisCategory] = Field(
         description="Gridded categories by name."
     )
@@ -368,6 +382,7 @@ class Extemis(Strict):
         doc: dict[str, object] = {
             "activate": self.activate,
             "global_diagnostics": self.global_diagnostics,
+            "source": self.source,
         }
         for name, category in self.categories.items():
             doc[name] = category.model_dump(mode="json", exclude_none=True)
@@ -376,10 +391,11 @@ class Extemis(Strict):
 
     @classmethod
     def from_mapping(cls, doc: dict[str, object]) -> Extemis:
-        fixed = {"activate", "global_diagnostics", "point"}
+        fixed = {"activate", "global_diagnostics", "source", "point"}
         return cls(
             activate=bool(doc["activate"]),
             global_diagnostics=bool(doc.get("global_diagnostics", True)),
+            source=doc.get("source", "file"),  # type: ignore[arg-type]
             categories={
                 k: ExtemisCategory.model_validate(v)
                 for k, v in doc.items()
@@ -434,7 +450,11 @@ def science_config(
     source_files: bool = False,
     data_root: Path | None = None,
 ) -> ScienceConfig:
-    """The science config for the manifest: every gridded category on the import path, point off."""
+    """The science config for the manifest, point off.
+
+    By default every gridded category is import-fed (`source: nuopc_import`, no source_file); with
+    `source_files` it is the file-path comparison run (`source: file`, the manifest's inventory paths).
+    """
     categories: dict[str, ExtemisCategory] = {}
     for name, category in manifest.categories.items():
         cat_defaults = _category_defaults(name, defaults)
@@ -486,6 +506,7 @@ def science_config(
             extemis=Extemis(
                 activate=True,
                 global_diagnostics=False,
+                source="file" if source_files else "nuopc_import",
                 categories=categories,
                 point=PointCategory(),
             ),

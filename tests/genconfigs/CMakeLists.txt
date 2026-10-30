@@ -68,3 +68,22 @@ set_tests_properties(
     LABELS ci
     TIMEOUT 120
 )
+
+# Task 7: a C48 set whose CECE does not provide extemis_anthro_NO (CATChem still advertises it), for the
+# unconnected-import failure case of proto_cece_met_catchem under processes/extemis/source: nuopc_import.
+add_test(
+  NAME gen_configs_c48_unconnected
+  COMMAND
+    ${UV_EXECUTABLE} run --no-sync python -m tools.gen_configs
+    --manifest data/C48/manifest.yaml --out ${PROJECT_BINARY_DIR}/gen/C48_unconnected --pets 6
+    --cece-omit anthro/NO
+  WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+)
+set_tests_properties(
+  gen_configs_c48_unconnected
+  PROPERTIES
+    FIXTURES_REQUIRED mockdata
+    FIXTURES_SETUP genconfigs_unconnected
+    LABELS ci
+    TIMEOUT 120
+)

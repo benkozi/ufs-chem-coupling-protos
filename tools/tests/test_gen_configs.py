@@ -330,3 +330,91 @@ def test_hosted_imports_need_a_cece_to_met_connector(
     with caplog.at_level(logging.ERROR, logger=log.ROOT_NAME):
         assert run(manifest_file, tmp_path / "g", "--defaults", str(custom)) == 2
     assert "CECE -> MET" in caplog.text
+
+
+def test_source_files_is_the_file_path_run(manifest_file: Path, tmp_path: Path) -> None:
+    """--catchem-source-files: source: file, the inventory paths, and no emission import advertised."""
+    out = tmp_path / "gen"
+    assert (
+        run(manifest_file, out, "--data-root", str(tmp_path), "--catchem-source-files")
+        == 0
+    )
+    science = yaml.safe_load((out / "CATChem_new_config.yml").read_text())
+    ext = science["processes"]["extemis"]
+    assert ext["source"] == "file"
+    assert ext["anthro"]["source_file"] == str(
+        tmp_path / "data/C48/inventories/anthro.nc"
+    )
+    assert ext["point"] == {"activate": False, "gridded": False}
+    mapping = yaml.safe_load((out / "CATChem_field_mapping.yml").read_text())
+    emission = [
+        e for e in mapping["import_fields"] if e["catchem_var"].startswith("extemis/")
+    ]
+    assert len(emission) == 20
+    assert not any(e["advertise"] for e in emission)
+
+
+def test_the_default_run_is_imports_only(manifest_file: Path, tmp_path: Path) -> None:
+    out = tmp_path / "gen"
+    assert run(manifest_file, out, "--data-root", str(tmp_path)) == 0
+    ext = yaml.safe_load((out / "CATChem_new_config.yml").read_text())["processes"][
+        "extemis"
+    ]
+    assert ext["source"] == "nuopc_import"
+    assert all("source_file" not in ext[name] for name in ("anthro", "gmi", "dust"))
+    mapping = yaml.safe_load((out / "CATChem_field_mapping.yml").read_text())
+    assert all(
+        e["advertise"]
+        for e in mapping["import_fields"]
+        if e["catchem_var"].startswith("extemis/")
+    )
+
+
+def test_cece_omit_leaves_one_import_unconnected(
+    manifest_file: Path, tmp_path: Path
+) -> None:
+    """CECE does not provide the omitted field; CATChem still advertises it (the unconnected failure case)."""
+    out = tmp_path / "gen"
+    assert (
+        run(
+            manifest_file,
+            out,
+            "--data-root",
+            str(tmp_path),
+            "--cece-omit",
+            "anthro/NO",
+        )
+        == 0
+    )
+    cece = yaml.safe_load((out / "cece.yaml").read_text())
+    assert "anthro_NO" not in cece["nuopc"]["export_fields"]
+    assert "anthro_NO" not in cece["species"]
+    assert len(cece["nuopc"]["export_fields"]) == 19
+    mapping = yaml.safe_load((out / "CATChem_field_mapping.yml").read_text())
+    assert "extemis_anthro_NO" in {e["standard_name"] for e in mapping["import_fields"]}
+    validator = _cece_validator()
+    errors = validator.validate_file(
+        out / "cece.yaml", "cece.yaml", validator.load_config_module(), set()
+    )
+    assert errors == []
+
+
+@pytest.mark.parametrize(
+    ("request_", "message"),
+    [
+        ("anthro/XYZ", "not a <category>/<variable> of the manifest"),
+        ("ship/NO", "not a <category>/<variable> of the manifest"),
+        ("anthroNO", "not a <category>/<variable> of the manifest"),
+        ("anthro/SO2", "MET hosts this import"),
+    ],
+)
+def test_a_bad_cece_omit_is_a_usage_error(
+    manifest_file: Path,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    request_: str,
+    message: str,
+) -> None:
+    with caplog.at_level(logging.ERROR, logger=log.ROOT_NAME):
+        assert run(manifest_file, tmp_path / "g", "--cece-omit", request_) == 2
+    assert message in caplog.text

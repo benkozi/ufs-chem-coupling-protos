@@ -821,3 +821,69 @@ Profile (`tools/ci.sh test profile`, 5 of 5 passed; per-PET mean over the 120 st
 | CECE init (`create sim` 0.064 s, `bind exports` 0.041 s) | 0.11 s | |
 
 `CECE::Step`'s self time is about 0 % (its children account for it), so the region set covers the step. CECE's largest cost is stacking all 20 species over 127 levels, 17 of them 2-D (the `nz`-deep exports of section 12); the ingest's largest self time is per variable in `gmi` and `anthro` (49 % and 31 % of their regions outside `Read`/`RegridPlan`/`WriteBandToImport`: the per-variable allreduces and time-axis checks). The tool prints six `allocation ... was not in the currently allocated set` warnings for buffers allocated before it attached; they do not affect the timings.
+
+## 14. Emission inputs: imports only (task 7, issue #14)
+
+CATChem takes every emission input of the prototype from CECE through NUOPC imports and opens no emission file. The switch is CATChem's, on the companion branch `benkozi/CATChem@feature/cece-coupling-proto`.
+
+### The `source` key
+
+`processes: extemis: source:` in CATChem's science config:
+
+- `file` (the default when the key is absent): CATChem's readers, exactly as before task 7. Imports that are connected and cover a whole category are still bound (the task-5 behaviour, which `nuopc_contract_harness` relies on); every other category reads its `source_file`, point and volcanic categories their `.rc` table. UFS `catchem_control` has no `source` key, so it runs this way.
+- `nuopc_import`: every active category must be fed by connected imports. CATChem skips the timing setup (the init-time `AQMIO_ReadTimeCoord` open) and never calls the readers; a `source_file`, if present, is ignored.
+- Anything else stops model initialize: `ConfigManager::validate()` reports `processes/extemis/source: unknown source value: <v>` with `use one of: file, nuopc_import`.
+
+Rules under `nuopc_import`, both checked at initialize:
+
+- An active point or non-gridded category (`format: volcano | point | point_rc | volcano_rc`, or `gridded: false`) fails `catchem_emis_init`: `catchem_emis_init: extemis source nuopc_import: category <c> is a point source (format=<f>, gridded=<T|F>); point sources need source: file`. An inactive one (`activate: false`, the generator's `point` block) is accepted.
+- An active category with an unconnected import fails the binding step (`InitializeP2`, on the coupled and the standalone path): `CATChem: extemis source nuopc_import: category <c> has no connected import extemis_<c>_<variable> (no file fallback)`. `RealizeAccepted` has already removed the unconnected optional import and counts it (`RealizeAccepted removed <n> unconnected optional import(s)`).
+
+### What a run opened (PET-log DEBUG lines)
+
+Every emission input open writes one `ESMF_LOGMSG_DEBUG` line before it happens; ESMF logs DEBUG by default (refdoc 50.7.13 `ESMF_LogSet`: all non-trace messages):
+
+- `CATChem: emission open category=<c> reader=<r> path=<p>`, `<r>` one of `tile` (aqmio tile read), `regrid` (`catchem_regrid_field`), `time_coord` (`AQMIO_ReadTimeCoord` through CATChem), `rank_probe` (`catchem_emis_detect_field_ranks`), `point_rc` (the `.rc` table).
+- `AQMIO: open iomode=<read|write|create> path=<p>` in `AQMIO_Open` (once per DE, every caller, diagnostics included), `AQMIO: open iomode=read path=<p>` in `AQMIO_ReadTimeCoord`, and `AQMIO: open iomode=write1d|read1d path=<p>` for the diagnostic writer's 1-D and global-attribute files.
+
+```bash
+grep -h 'CATChem: emission open\|AQMIO: open' build/ci-out/ci/build/protos/cece_met_catchem/run_C48_np6/PET*.ESMF_LogFile | sort | uniq -c
+```
+
+On the generated set this prints nothing: diagnostics are off and every category is import-fed.
+
+### The generator
+
+- The default set writes `source: nuopc_import`, no `source_file`, `point: {activate: false, gridded: false}`.
+- `--catchem-source-files` is the file-path comparison run (task 9): `source: file`, the manifest's inventory paths as `source_file`, and the 20 `extemis/` field-mapping entries with `advertise: false`, so CATChem advertises no emission import, nothing connects, and the readers feed every category. Without the last part, `source: file` would still bind the connected imports and read nothing.
+- `--cece-omit <category>/<variable>` (repeatable) leaves that import unconnected: CECE neither reads nor exports it, CATChem still advertises it. It is the input of the unconnected-import failure case; a pair that is not in the manifest, or that MET hosts (`anthro/SO2`), is a usage error (exit 2).
+
+```bash
+uv run python -m tools.gen_configs --manifest data/C48/manifest.yaml --out build/gen/C48_unconnected --pets 6 --cece-omit anthro/NO
+```
+
+### Tests (`ci`)
+
+- `log_cece_met_catchem` gained `require catchem_emis_init: extemis source=nuopc_import`, `require catchem_emis_update: Emission data updated` (a DEBUG line, so the next two cannot pass on a log without DEBUG), `forbid CATChem: emission open category=`, `forbid AQMIO: open iomode=read path=`.
+- `log_check_forbid_fails`: `forbid` on a fake log holding an emission-open line must fail (`PASS_REGULAR_EXPRESSION "log_check: forbidden line found"`).
+- `gen_configs_c48_unconnected` (fixture `genconfigs_unconnected`): the `--cece-omit anthro/NO` set under `build/gen/C48_unconnected`.
+- `proto_cece_met_catchem_unconnected_fails`: that set on 6 PETs in `run_C48_np6_unconnected/`; passes on `cece_met_catchem: Initialize( (user))? failed` on stdout, fails on `MPI_ABORT|ORTE_ERROR_LOG|completed <n> steps`.
+- `log_cece_met_catchem_unconnected`: its PET logs require `RealizeAccepted removed 1 unconnected optional import(s)` and the `has no connected import extemis_anthro_NO (no file fallback)` error, and forbid both open lines. esmApp prints only which phase failed; the named error is in the PET logs, so the message check is this test, not a pass expression on the run.
+
+CATChem's own tests for the switch live in its suite (`tests/test_config_validation.cpp`, `tests/test_nuopc_emis_source.F90` with eight `nuopc_emis_source_<case>` tests, `nuopc_contract_multi_de_fails`) and run in CATChem's CI, not in this repository's `ctest`.
+
+### Two CATChem fixes in the same PR
+
+- In `file` mode a failed init-time time-coordinate read (missing or unreadable `source_file`, unparsable time units) now stops initialize: `catchem_emis_read_time_coord: FATAL ERROR: File not found for time coord: <p>` and `catchem_emis_init: FATAL ERROR: Failed timing setup for category: <c>`. It used to be ignored, and the first update then failed on the same file. Point categories are no longer probed for a time coordinate (an `.rc` table has none).
+- The cap stops on a PET holding several DEs of an import field: `CATChem: import field <f> has <n> DEs on this PET; CATChem needs one DE per PET (localDeCount must be 1)`. It used to log `localDeCount must be 1` and run on the last DE's coordinates. The prototype driver's own one-DE-per-PET check is unchanged.
+
+### Measured (2026-10-29, `tools/ci.sh test ci` on the cloud builder's amd64 node)
+
+| Quantity | Value |
+| --- | --- |
+| `ctest -L ci` | 25 of 25 passed (21 before task 7, plus `gen_configs_c48_unconnected`, `log_check_forbid_fails`, `proto_cece_met_catchem_unconnected_fails`, `log_cece_met_catchem_unconnected`) |
+| `proto_cece_met_catchem` | 52.6 s, 120 steps |
+| emission-open lines in its PET logs | 0 (`CATChem: emission open`, `AQMIO: open`) |
+| conservation, `anthro/SO2` level 1 | 1.529e-6 (unchanged) |
+| memory per PET at the end, max over PETs (physical) | 869 MB |
+| `proto_cece_met_catchem_unconnected_fails` | 1.3 s; `Initialize (user) failed` on stdout, the named error in all six PET logs |
