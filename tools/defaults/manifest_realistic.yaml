@@ -1,0 +1,1511 @@
+earth_radius_m: 6371000.0
+clock:
+  start: '2021-03-22T06:00:00Z'
+  duration_hours: 24
+  step_seconds: 720
+  n_levels: 127
+grids:
+  inventory:
+    dlon: 1.0
+    dlat: 1.0
+    lon_first: -179.5
+    lat_first: -89.5
+    nlon: 360
+    nlat: 180
+    pole_centred: false
+  g3600x1800:
+    dlon: 0.1
+    dlat: 0.1
+    lon_first: -179.95
+    lat_first: -89.95
+    nlon: 3600
+    nlat: 1800
+    pole_centred: false
+  g144x91p:
+    dlon: 2.5
+    dlat: 2.0
+    lon_first: -180.0
+    lat_first: -90.0
+    nlon: 144
+    nlat: 91
+    pole_centred: true
+  g360x181p:
+    dlon: 1.0
+    dlat: 1.0
+    lon_first: -180.0
+    lat_first: -90.0
+    nlon: 360
+    nlat: 181
+    pole_centred: true
+  g4444x2222:
+    dlon: 0.081008100810081
+    dlat: 0.081
+    lon_first: -179.9595
+    lat_first: -89.945666675
+    nlon: 4444
+    nlat: 2222
+    pole_centred: false
+land_mask:
+  grid: inventory
+  file: inventories/landmask.nc
+  threshold: 0.5
+  continents:
+    - lon: 40.0
+      lat: 25.0
+      semi_axis_lon: 70.0
+      semi_axis_lat: 40.0
+      rotation_deg: 10.0
+      exponent: 4.0
+    - lon: -80.0
+      lat: 5.0
+      semi_axis_lon: 30.0
+      semi_axis_lat: 60.0
+      rotation_deg: -20.0
+      exponent: 4.0
+    - lon: 135.0
+      lat: -25.0
+      semi_axis_lon: 18.0
+      semi_axis_lat: 12.0
+      rotation_deg: 0.0
+      exponent: 4.0
+categories:
+  so2_aviation_lto:
+    file: ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_so2.aviation_lto.x3600_y1800_t12.2010.nc4
+    cadence: monthly
+    regrid_method: conserve
+    cece_mapalgo: consd
+    grid: g3600x1800
+    is_3d: false
+    level_order: bottom_up
+    masked_by: none
+    variables:
+      so2_aviation:
+        units: kg m-2 s-1
+        long_name: SO2 emissions
+        background: 1.88512e-15
+        sources:
+          - lon: 0.0
+            lat: 0.0
+            sigma_deg: 15.0
+            amplitude: 1.35515e-10
+        diurnal:
+        seasonal:
+          relative_amplitude: 0.3
+          peak_month: 7
+        vertical:
+    layout:
+      format: netcdf
+      model: NETCDF4
+      lon_name: lon
+      lat_name: lat
+      lev_name: lev
+      time_name: time
+      dtype: float32
+      fill_value: 1.0000000200408773e+20
+      lev_before_time: false
+      write_bounds_and_area: false
+      daily_record_hour: 12.0
+      time_dimension: true
+      lev_values:
+      lev_units:
+      time_axis:
+        units: hours since 2010-01-15 00:00:00
+        calendar: standard
+        values:
+          - 0.0
+          - 730.0
+          - 1460.0
+          - 2190.0
+          - 2920.0
+          - 3650.0
+          - 4380.0
+          - 5110.0
+          - 5840.0
+          - 6570.0
+          - 7300.0
+          - 8030.0
+  oc_aviation_lto:
+    file: ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_oc.aviation_lto.x3600_y1800_t12.2010.nc4
+    cadence: monthly
+    regrid_method: conserve
+    cece_mapalgo: consd
+    grid: g3600x1800
+    is_3d: false
+    level_order: bottom_up
+    masked_by: none
+    variables:
+      oc_aviation:
+        units: kg m-2 s-1
+        long_name: OC emissions
+        background: 5.36529e-17
+        sources:
+          - lon: 0.0
+            lat: 0.0
+            sigma_deg: 15.0
+            amplitude: 3.84744e-12
+        diurnal:
+        seasonal:
+          relative_amplitude: 0.3
+          peak_month: 7
+        vertical:
+    layout:
+      format: netcdf
+      model: NETCDF4
+      lon_name: lon
+      lat_name: lat
+      lev_name: lev
+      time_name: time
+      dtype: float32
+      fill_value: 1.0000000200408773e+20
+      lev_before_time: false
+      write_bounds_and_area: false
+      daily_record_hour: 12.0
+      time_dimension: true
+      lev_values:
+      lev_units:
+      time_axis:
+        units: hours since 2010-01-15 00:00:00
+        calendar: standard
+        values:
+          - 0.0
+          - 730.0
+          - 1460.0
+          - 2190.0
+          - 2920.0
+          - 3650.0
+          - 4380.0
+          - 5110.0
+          - 5840.0
+          - 6570.0
+          - 7300.0
+          - 8030.0
+  bc_aviation_lto:
+    file: ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_bc.aviation_lto.x3600_y1800_t12.2010.nc4
+    cadence: monthly
+    regrid_method: conserve
+    cece_mapalgo: consd
+    grid: g3600x1800
+    is_3d: false
+    level_order: bottom_up
+    masked_by: none
+    variables:
+      bc_aviation:
+        units: kg m-2 s-1
+        long_name: BC emissions
+        background: 5.92202e-17
+        sources:
+          - lon: 0.0
+            lat: 0.0
+            sigma_deg: 15.0
+            amplitude: 4.19134e-12
+        diurnal:
+        seasonal:
+          relative_amplitude: 0.3
+          peak_month: 7
+        vertical:
+    layout:
+      format: netcdf
+      model: NETCDF4
+      lon_name: lon
+      lat_name: lat
+      lev_name: lev
+      time_name: time
+      dtype: float32
+      fill_value: 1.0000000200408773e+20
+      lev_before_time: false
+      write_bounds_and_area: false
+      daily_record_hour: 12.0
+      time_dimension: true
+      lev_values:
+      lev_units:
+      time_axis:
+        units: hours since 2010-01-15 00:00:00
+        calendar: standard
+        values:
+          - 0.0
+          - 730.0
+          - 1460.0
+          - 2190.0
+          - 2920.0
+          - 3650.0
+          - 4380.0
+          - 5110.0
+          - 5840.0
+          - 6570.0
+          - 7300.0
+          - 8030.0
+  so2_aviation_cds:
+    file: ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_so2.aviation_cds.x3600_y1800_t12.2010.nc4
+    cadence: monthly
+    regrid_method: conserve
+    cece_mapalgo: consd
+    grid: g3600x1800
+    is_3d: false
+    level_order: bottom_up
+    masked_by: none
+    variables:
+      so2_aviation:
+        units: kg m-2 s-1
+        long_name: SO2 emissions
+        background: 4.80475e-15
+        sources:
+          - lon: 0.0
+            lat: 0.0
+            sigma_deg: 15.0
+            amplitude: 1.806e-11
+        diurnal:
+        seasonal:
+          relative_amplitude: 0.3
+          peak_month: 7
+        vertical:
+    layout:
+      format: netcdf
+      model: NETCDF4
+      lon_name: lon
+      lat_name: lat
+      lev_name: lev
+      time_name: time
+      dtype: float32
+      fill_value: 1.0000000200408773e+20
+      lev_before_time: false
+      write_bounds_and_area: false
+      daily_record_hour: 12.0
+      time_dimension: true
+      lev_values:
+      lev_units:
+      time_axis:
+        units: hours since 2010-01-15 00:00:00
+        calendar: standard
+        values:
+          - 0.0
+          - 730.0
+          - 1460.0
+          - 2190.0
+          - 2920.0
+          - 3650.0
+          - 4380.0
+          - 5110.0
+          - 5840.0
+          - 6570.0
+          - 7300.0
+          - 8030.0
+  oc_aviation_cds:
+    file: ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_oc.aviation_cds.x3600_y1800_t12.2010.nc4
+    cadence: monthly
+    regrid_method: conserve
+    cece_mapalgo: consd
+    grid: g3600x1800
+    is_3d: false
+    level_order: bottom_up
+    masked_by: none
+    variables:
+      oc_aviation:
+        units: kg m-2 s-1
+        long_name: OC emissions
+        background: 2.4678e-16
+        sources:
+          - lon: 0.0
+            lat: 0.0
+            sigma_deg: 15.0
+            amplitude: 9.39166e-13
+        diurnal:
+        seasonal:
+          relative_amplitude: 0.3
+          peak_month: 7
+        vertical:
+    layout:
+      format: netcdf
+      model: NETCDF4
+      lon_name: lon
+      lat_name: lat
+      lev_name: lev
+      time_name: time
+      dtype: float32
+      fill_value: 1.0000000200408773e+20
+      lev_before_time: false
+      write_bounds_and_area: false
+      daily_record_hour: 12.0
+      time_dimension: true
+      lev_values:
+      lev_units:
+      time_axis:
+        units: hours since 2010-01-15 00:00:00
+        calendar: standard
+        values:
+          - 0.0
+          - 730.0
+          - 1460.0
+          - 2190.0
+          - 2920.0
+          - 3650.0
+          - 4380.0
+          - 5110.0
+          - 5840.0
+          - 6570.0
+          - 7300.0
+          - 8030.0
+  bc_aviation_cds:
+    file: ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_bc.aviation_cds.x3600_y1800_t12.2010.nc4
+    cadence: monthly
+    regrid_method: conserve
+    cece_mapalgo: consd
+    grid: g3600x1800
+    is_3d: false
+    level_order: bottom_up
+    masked_by: none
+    variables:
+      bc_aviation:
+        units: kg m-2 s-1
+        long_name: BC emissions
+        background: 1.8798e-16
+        sources:
+          - lon: 0.0
+            lat: 0.0
+            sigma_deg: 15.0
+            amplitude: 7.06574e-13
+        diurnal:
+        seasonal:
+          relative_amplitude: 0.3
+          peak_month: 7
+        vertical:
+    layout:
+      format: netcdf
+      model: NETCDF4
+      lon_name: lon
+      lat_name: lat
+      lev_name: lev
+      time_name: time
+      dtype: float32
+      fill_value: 1.0000000200408773e+20
+      lev_before_time: false
+      write_bounds_and_area: false
+      daily_record_hour: 12.0
+      time_dimension: true
+      lev_values:
+      lev_units:
+      time_axis:
+        units: hours since 2010-01-15 00:00:00
+        calendar: standard
+        values:
+          - 0.0
+          - 730.0
+          - 1460.0
+          - 2190.0
+          - 2920.0
+          - 3650.0
+          - 4380.0
+          - 5110.0
+          - 5840.0
+          - 6570.0
+          - 7300.0
+          - 8030.0
+  so2_aviation_crs:
+    file: ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_so2.aviation_crs.x3600_y1800_t12.2010.nc4
+    cadence: monthly
+    regrid_method: conserve
+    cece_mapalgo: consd
+    grid: g3600x1800
+    is_3d: false
+    level_order: bottom_up
+    masked_by: none
+    variables:
+      so2_aviation:
+        units: kg m-2 s-1
+        long_name: SO2 emissions
+        background: 6.79196e-15
+        sources:
+          - lon: 0.0
+            lat: 0.0
+            sigma_deg: 15.0
+            amplitude: 2.03493e-12
+        diurnal:
+        seasonal:
+          relative_amplitude: 0.3
+          peak_month: 7
+        vertical:
+    layout:
+      format: netcdf
+      model: NETCDF4
+      lon_name: lon
+      lat_name: lat
+      lev_name: lev
+      time_name: time
+      dtype: float32
+      fill_value: 1.0000000200408773e+20
+      lev_before_time: false
+      write_bounds_and_area: false
+      daily_record_hour: 12.0
+      time_dimension: true
+      lev_values:
+      lev_units:
+      time_axis:
+        units: hours since 2010-01-15 00:00:00
+        calendar: standard
+        values:
+          - 0.0
+          - 730.0
+          - 1460.0
+          - 2190.0
+          - 2920.0
+          - 3650.0
+          - 4380.0
+          - 5110.0
+          - 5840.0
+          - 6570.0
+          - 7300.0
+          - 8030.0
+  oc_aviation_crs:
+    file: ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_oc.aviation_crs.x3600_y1800_t12.2010.nc4
+    cadence: monthly
+    regrid_method: conserve
+    cece_mapalgo: consd
+    grid: g3600x1800
+    is_3d: false
+    level_order: bottom_up
+    masked_by: none
+    variables:
+      oc_aviation:
+        units: kg m-2 s-1
+        long_name: OC emissions
+        background: 3.54511e-16
+        sources:
+          - lon: 0.0
+            lat: 0.0
+            sigma_deg: 15.0
+            amplitude: 7.66544e-14
+        diurnal:
+        seasonal:
+          relative_amplitude: 0.3
+          peak_month: 7
+        vertical:
+    layout:
+      format: netcdf
+      model: NETCDF4
+      lon_name: lon
+      lat_name: lat
+      lev_name: lev
+      time_name: time
+      dtype: float32
+      fill_value: 1.0000000200408773e+20
+      lev_before_time: false
+      write_bounds_and_area: false
+      daily_record_hour: 12.0
+      time_dimension: true
+      lev_values:
+      lev_units:
+      time_axis:
+        units: hours since 2010-01-15 00:00:00
+        calendar: standard
+        values:
+          - 0.0
+          - 730.0
+          - 1460.0
+          - 2190.0
+          - 2920.0
+          - 3650.0
+          - 4380.0
+          - 5110.0
+          - 5840.0
+          - 6570.0
+          - 7300.0
+          - 8030.0
+  bc_aviation_crs:
+    file: ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_bc.aviation_crs.x3600_y1800_t12.2010.nc4
+    cadence: monthly
+    regrid_method: conserve
+    cece_mapalgo: consd
+    grid: g3600x1800
+    is_3d: false
+    level_order: bottom_up
+    masked_by: none
+    variables:
+      bc_aviation:
+        units: kg m-2 s-1
+        long_name: BC emissions
+        background: 2.65726e-16
+        sources:
+          - lon: 0.0
+            lat: 0.0
+            sigma_deg: 15.0
+            amplitude: 7.96179e-14
+        diurnal:
+        seasonal:
+          relative_amplitude: 0.3
+          peak_month: 7
+        vertical:
+    layout:
+      format: netcdf
+      model: NETCDF4
+      lon_name: lon
+      lat_name: lat
+      lev_name: lev
+      time_name: time
+      dtype: float32
+      fill_value: 1.0000000200408773e+20
+      lev_before_time: false
+      write_bounds_and_area: false
+      daily_record_hour: 12.0
+      time_dimension: true
+      lev_values:
+      lev_units:
+      time_axis:
+        units: hours since 2010-01-15 00:00:00
+        calendar: standard
+        values:
+          - 0.0
+          - 730.0
+          - 1460.0
+          - 2190.0
+          - 2920.0
+          - 3650.0
+          - 4380.0
+          - 5110.0
+          - 5840.0
+          - 6570.0
+          - 7300.0
+          - 8030.0
+  gmi:
+    file: ExtData/PIESA/L127/A2_ACCMIP_gmic_MERRA_oh_h2o2_no3.x144_y91_z127_t14.2021.nc
+    cadence: monthly
+    regrid_method: conserve
+    cece_mapalgo: consd
+    grid: g144x91p
+    is_3d: true
+    level_order: top_down
+    masked_by: none
+    variables:
+      oh:
+        units: mol/mol
+        long_name: OH volume mixing ratio [mol/mol]
+        background: 6.84436e-11
+        sources:
+          - lon: 0.0
+            lat: 0.0
+            sigma_deg: 15.0
+            amplitude: 2.028e-09
+        diurnal:
+        seasonal:
+          relative_amplitude: 0.3
+          peak_month: 7
+        vertical:
+          scale_height_levels: 25.0
+      h2o2:
+        units: mol/mol
+        long_name: H2O2 volume mixing ratio [mol/mol]
+        background: 2.43248e-10
+        sources:
+          - lon: 0.0
+            lat: 0.0
+            sigma_deg: 15.0
+            amplitude: 6.18836e-09
+        diurnal:
+        seasonal:
+          relative_amplitude: 0.3
+          peak_month: 7
+        vertical:
+          scale_height_levels: 25.0
+      no3:
+        units: mol/mol
+        long_name: NO3 volume mixing ratio [mol/mol]
+        background: 5.74034e-12
+        sources:
+          - lon: 0.0
+            lat: 0.0
+            sigma_deg: 15.0
+            amplitude: 6.00648e-10
+        diurnal:
+        seasonal:
+          relative_amplitude: 0.3
+          peak_month: 7
+        vertical:
+          scale_height_levels: 25.0
+    layout:
+      format: netcdf
+      model: NETCDF4_CLASSIC
+      lon_name: lon
+      lat_name: lat
+      lev_name: lev
+      time_name: time
+      dtype: float32
+      fill_value: 999999986991104.0
+      lev_before_time: false
+      write_bounds_and_area: false
+      daily_record_hour: 12.0
+      time_dimension: true
+      lev_values:
+        - 0.01302
+        - 0.020685000000000002
+        - 0.03228
+        - 0.0495
+        - 0.074615
+        - 0.11062
+        - 0.16136499999999998
+        - 0.23169499999999998
+        - 0.327595
+        - 0.45630000000000004
+        - 0.6263850000000001
+        - 0.8478100000000001
+        - 1.131895
+        - 1.491225
+        - 1.9395099999999998
+        - 2.491365
+        - 3.162
+        - 3.966875
+        - 4.921315
+        - 6.04009
+        - 7.337000000000001
+        - 8.82449
+        - 10.513325
+        - 12.412345
+        - 14.528285
+        - 16.865735
+        - 19.427215
+        - 22.213335
+        - 25.223119999999998
+        - 28.45441
+        - 31.904365
+        - 35.570045
+        - 39.44905
+        - 43.540225
+        - 47.84438
+        - 52.36505999999999
+        - 57.10932499999999
+        - 62.08855999999999
+        - 67.31931999999999
+        - 72.82256
+        - 78.61657
+        - 84.714
+        - 91.12608499999999
+        - 97.86390499999997
+        - 104.93830499999999
+        - 112.35984499999999
+        - 120.13868499999998
+        - 128.28445
+        - 136.80617
+        - 145.71215
+        - 155.00983
+        - 164.70569500000002
+        - 174.80511
+        - 185.31221500000004
+        - 196.22979500000005
+        - 207.55912500000005
+        - 219.29987500000007
+        - 231.44996000000006
+        - 244.00548000000006
+        - 256.9605650000001
+        - 270.30730000000005
+        - 284.03568000000007
+        - 298.13354000000004
+        - 312.58655000000005
+        - 327.37816000000004
+        - 342.4896450000001
+        - 357.90015000000005
+        - 373.58679000000006
+        - 389.52471500000007
+        - 405.687225
+        - 422.04597
+        - 438.57110500000005
+        - 455.231515
+        - 471.99501499999997
+        - 488.82858999999996
+        - 505.69869499999993
+        - 522.5714849999999
+        - 539.4130749999999
+        - 556.1898449999999
+        - 572.8686899999999
+        - 589.417285
+        - 605.804325
+        - 621.9997449999998
+        - 637.97494
+        - 653.70296
+        - 669.1586649999999
+        - 684.31881
+        - 699.1622
+        - 713.669815
+        - 727.8247749999999
+        - 741.612355
+        - 755.02007
+        - 768.0375650000001
+        - 780.656615
+        - 792.8710400000001
+        - 804.6766
+        - 816.07095
+        - 827.053475
+        - 837.625245
+        - 847.7888
+        - 857.5480650000001
+        - 866.90823
+        - 875.875585
+        - 884.45743
+        - 892.6619800000001
+        - 900.49814
+        - 907.975425
+        - 915.1039349999999
+        - 921.8941649999999
+        - 928.3569449999999
+        - 934.5033099999999
+        - 940.34449
+        - 945.8917649999999
+        - 951.1564099999999
+        - 956.1496999999998
+        - 960.8827999999999
+        - 965.3667649999999
+        - 969.6124299999999
+        - 973.6303849999999
+        - 977.431035
+        - 981.024515
+        - 984.42067
+        - 987.62902
+        - 990.6588100000001
+        - 993.5189450000001
+        - 996.2179400000001
+        - 998.7641000000002
+      lev_units: hPa
+      time_axis:
+        units: minutes since 2020-12-17 00:00:00
+        calendar: standard
+        values:
+          - 0.0
+          - 43920.0
+          - 87840.0
+          - 131760.0
+          - 175680.0
+          - 219600.0
+          - 263520.0
+          - 307440.0
+          - 351360.0
+          - 395280.0
+          - 439200.0
+          - 483120.0
+          - 527040.0
+          - 570960.0
+  dms:
+    file: ExtData/MERRA2/sfc/DMSclim_sfcconcentration.x360_y181_t12.Lana2011.nc4
+    cadence: monthly
+    regrid_method: conserve
+    cece_mapalgo: consd
+    grid: g360x181p
+    is_3d: false
+    level_order: bottom_up
+    masked_by: ocean
+    variables:
+      conc:
+        units: nmol l-1
+        long_name: mole concentration of DMS in water
+        background: 1.51974
+        sources:
+          - lon: -30.0
+            lat: 50.0
+            sigma_deg: 15.0
+            amplitude: 49.5517
+          - lon: 160.0
+            lat: -45.0
+            sigma_deg: 15.0
+            amplitude: 49.5517
+        diurnal:
+        seasonal:
+          relative_amplitude: 0.3
+          peak_month: 7
+        vertical:
+    layout:
+      format: netcdf
+      model: NETCDF4
+      lon_name: longitude
+      lat_name: latitude
+      lev_name: lev
+      time_name: time
+      dtype: float32
+      fill_value:
+      lev_before_time: false
+      write_bounds_and_area: false
+      daily_record_hour: 12.0
+      time_dimension: true
+      lev_values:
+      lev_units:
+      time_axis:
+        units: hours since 2011-01-14 12:00:00
+        calendar: standard
+        values:
+          - 0.0
+          - 730.0
+          - 1460.0
+          - 2190.0
+          - 2920.0
+          - 3650.0
+          - 4380.0
+          - 5110.0
+          - 5840.0
+          - 6570.0
+          - 7300.0
+          - 8030.0
+  fengsha:
+    file: ExtData/dust/FENGSHA_New_Method_NESDISv1.1_9km.nc
+    cadence: monthly
+    regrid_method: neareststod
+    cece_mapalgo: nn
+    grid: g4444x2222
+    is_3d: false
+    level_order: bottom_up
+    masked_by: land
+    variables:
+      PC:
+        units: count
+        long_name: Protrusion Coefficient
+        background: 8.02828
+        sources:
+          - lon: 40.0
+            lat: 25.0
+            sigma_deg: 15.0
+            amplitude: 1.97172
+          - lon: -80.0
+            lat: 5.0
+            sigma_deg: 15.0
+            amplitude: 1.97172
+          - lon: 135.0
+            lat: -25.0
+            sigma_deg: 15.0
+            amplitude: 1.97172
+        diurnal:
+        seasonal:
+          relative_amplitude: 0.3
+          peak_month: 7
+        vertical:
+    layout:
+      format: netcdf
+      model: NETCDF4
+      lon_name: lon
+      lat_name: lat
+      lev_name: lev
+      time_name: time
+      dtype: float64
+      fill_value:
+      lev_before_time: false
+      write_bounds_and_area: false
+      daily_record_hour: 12.0
+      time_dimension: true
+      lev_values:
+      lev_units:
+      time_axis:
+        units: hours since 2022-01-01
+        calendar: gregorian
+        values:
+          - 0.0
+          - 744.0
+          - 1416.0
+          - 2160.0
+          - 2880.0
+          - 3624.0
+          - 4344.0
+          - 5088.0
+          - 5832.0
+          - 6552.0
+          - 7296.0
+          - 8016.0
+  anthro1:
+    file: ExtData/CEDS/v2019/%y4/CEDS.2019.emis.%y4%m2%d2.nc
+    cadence: daily
+    regrid_method: conserve
+    cece_mapalgo: consd
+    grid: g3600x1800
+    is_3d: false
+    level_order: bottom_up
+    masked_by: land
+    variables:
+      SO2:
+        units: kg/m2/s
+        long_name: SO2
+        background: 1.79886e-12
+        sources:
+          - lon: 40.0
+            lat: 25.0
+            sigma_deg: 15.0
+            amplitude: 8.56163e-09
+          - lon: -80.0
+            lat: 5.0
+            sigma_deg: 15.0
+            amplitude: 8.56163e-09
+          - lon: 135.0
+            lat: -25.0
+            sigma_deg: 15.0
+            amplitude: 8.56163e-09
+        diurnal:
+        seasonal:
+        vertical:
+      OC:
+        units: kg/m2/s
+        long_name: OC
+        background: 5.7528e-13
+        sources:
+          - lon: 40.0
+            lat: 25.0
+            sigma_deg: 15.0
+            amplitude: 2.4262e-10
+          - lon: -80.0
+            lat: 5.0
+            sigma_deg: 15.0
+            amplitude: 2.4262e-10
+          - lon: 135.0
+            lat: -25.0
+            sigma_deg: 15.0
+            amplitude: 2.4262e-10
+        diurnal:
+        seasonal:
+        vertical:
+      BC:
+        units: kg/m2/s
+        long_name: BC
+        background: 2.34371e-13
+        sources:
+          - lon: 40.0
+            lat: 25.0
+            sigma_deg: 15.0
+            amplitude: 2.59656e-10
+          - lon: -80.0
+            lat: 5.0
+            sigma_deg: 15.0
+            amplitude: 2.59656e-10
+          - lon: 135.0
+            lat: -25.0
+            sigma_deg: 15.0
+            amplitude: 2.59656e-10
+        diurnal:
+        seasonal:
+        vertical:
+    layout:
+      format: netcdf
+      model: NETCDF4_CLASSIC
+      lon_name: lon
+      lat_name: lat
+      lev_name: lev
+      time_name: time
+      dtype: float32
+      fill_value: -9.999999848243207e+30
+      lev_before_time: false
+      write_bounds_and_area: false
+      daily_record_hour: 0.0
+      time_dimension: true
+      lev_values:
+      lev_units:
+      time_axis:
+  anthro2:
+    file: ExtData/CEDS/v2019/%y4/CEDS.2019.emis.%y4%m2%d2.nc
+    cadence: daily
+    regrid_method: conserve
+    cece_mapalgo: consd
+    grid: g3600x1800
+    is_3d: false
+    level_order: bottom_up
+    masked_by: land
+    variables:
+      SO2_elev:
+        units: kg/m2/s
+        long_name: SO2_elev
+        background: 1.75618e-12
+        sources:
+          - lon: 40.0
+            lat: 25.0
+            sigma_deg: 15.0
+            amplitude: 7.54664e-09
+          - lon: -80.0
+            lat: 5.0
+            sigma_deg: 15.0
+            amplitude: 7.54664e-09
+          - lon: 135.0
+            lat: -25.0
+            sigma_deg: 15.0
+            amplitude: 7.54664e-09
+        diurnal:
+        seasonal:
+        vertical:
+      OC_elev:
+        units: kg/m2/s
+        long_name: OC_elev
+        background: 6.3399e-14
+        sources:
+          - lon: 40.0
+            lat: 25.0
+            sigma_deg: 15.0
+            amplitude: 3.55553e-10
+          - lon: -80.0
+            lat: 5.0
+            sigma_deg: 15.0
+            amplitude: 3.55553e-10
+          - lon: 135.0
+            lat: -25.0
+            sigma_deg: 15.0
+            amplitude: 3.55553e-10
+        diurnal:
+        seasonal:
+        vertical:
+      BC_elev:
+        units: kg/m2/s
+        long_name: BC_elev
+        background: 3.48193e-14
+        sources:
+          - lon: 40.0
+            lat: 25.0
+            sigma_deg: 15.0
+            amplitude: 1.74578e-10
+          - lon: -80.0
+            lat: 5.0
+            sigma_deg: 15.0
+            amplitude: 1.74578e-10
+          - lon: 135.0
+            lat: -25.0
+            sigma_deg: 15.0
+            amplitude: 1.74578e-10
+        diurnal:
+        seasonal:
+        vertical:
+    layout:
+      format: netcdf
+      model: NETCDF4_CLASSIC
+      lon_name: lon
+      lat_name: lat
+      lev_name: lev
+      time_name: time
+      dtype: float32
+      fill_value: -9.999999848243207e+30
+      lev_before_time: false
+      write_bounds_and_area: false
+      daily_record_hour: 0.0
+      time_dimension: true
+      lev_values:
+      lev_units:
+      time_axis:
+  ship:
+    file: ExtData/CEDS/v2019/%y4/CEDS.2019.emis.%y4%m2%d2.nc
+    cadence: daily
+    regrid_method: conserve
+    cece_mapalgo: consd
+    grid: g3600x1800
+    is_3d: false
+    level_order: bottom_up
+    masked_by: ocean
+    variables:
+      SO2_ship:
+        units: kg/m2/s
+        long_name: SO2_ship
+        background: 5.32137e-13
+        sources:
+          - lon: -30.0
+            lat: 50.0
+            sigma_deg: 15.0
+            amplitude: 1.07676e-10
+          - lon: 160.0
+            lat: -45.0
+            sigma_deg: 15.0
+            amplitude: 1.07676e-10
+        diurnal:
+        seasonal:
+        vertical:
+      SO4_ship:
+        units: kg/m2/s
+        long_name: SO4_ship
+        background: 4.09745e-14
+        sources:
+          - lon: -30.0
+            lat: 50.0
+            sigma_deg: 15.0
+            amplitude: 8.29104e-12
+          - lon: 160.0
+            lat: -45.0
+            sigma_deg: 15.0
+            amplitude: 8.29104e-12
+        diurnal:
+        seasonal:
+        vertical:
+      OC_ship:
+        units: kg/m2/s
+        long_name: OC_ship
+        background: 3.07939e-15
+        sources:
+          - lon: -30.0
+            lat: 50.0
+            sigma_deg: 15.0
+            amplitude: 1.46505e-12
+          - lon: 160.0
+            lat: -45.0
+            sigma_deg: 15.0
+            amplitude: 1.46505e-12
+        diurnal:
+        seasonal:
+        vertical:
+      BC_ship:
+        units: kg/m2/s
+        long_name: BC_ship
+        background: 3.07939e-15
+        sources:
+          - lon: -30.0
+            lat: 50.0
+            sigma_deg: 15.0
+            amplitude: 1.46505e-12
+          - lon: 160.0
+            lat: -45.0
+            sigma_deg: 15.0
+            amplitude: 1.46505e-12
+        diurnal:
+        seasonal:
+        vertical:
+    layout:
+      format: netcdf
+      model: NETCDF4_CLASSIC
+      lon_name: lon
+      lat_name: lat
+      lev_name: lev
+      time_name: time
+      dtype: float32
+      fill_value: -9.999999848243207e+30
+      lev_before_time: false
+      write_bounds_and_area: false
+      daily_record_hour: 0.0
+      time_dimension: true
+      lev_values:
+      lev_units:
+      time_axis:
+  fire:
+    file: ExtData/QFED/%y4/%m2/qfed2.emis_so2.006.%y4%m2%d2.nc4
+    cadence: daily
+    regrid_method: conserve
+    cece_mapalgo: consd
+    grid: g3600x1800
+    is_3d: false
+    level_order: bottom_up
+    masked_by: land
+    variables:
+      biomass:
+        units: kg s-1 m-2
+        long_name: SO2 Biomass Emissions
+        background: 1.46152e-13
+        sources:
+          - lon: 40.0
+            lat: 25.0
+            sigma_deg: 15.0
+            amplitude: 1.49844e-08
+          - lon: -80.0
+            lat: 5.0
+            sigma_deg: 15.0
+            amplitude: 1.49844e-08
+          - lon: 135.0
+            lat: -25.0
+            sigma_deg: 15.0
+            amplitude: 1.49844e-08
+        diurnal:
+        seasonal:
+        vertical:
+    layout:
+      format: netcdf
+      model: NETCDF4
+      lon_name: lon
+      lat_name: lat
+      lev_name: lev
+      time_name: time
+      dtype: float32
+      fill_value: 1.0000000200408773e+20
+      lev_before_time: false
+      write_bounds_and_area: false
+      daily_record_hour: 12.0
+      time_dimension: true
+      lev_values:
+      lev_units:
+      time_axis:
+  bio:
+    file: ExtData/MEGAN_OFFLINE_BVOC/v2019-10/%y4/MEGAN.OFFLINE.BIOVOC.%y4.emis.%y4%m2%d2.nc
+    cadence: daily
+    regrid_method: conserve
+    cece_mapalgo: consd
+    grid: g3600x1800
+    is_3d: false
+    level_order: bottom_up
+    masked_by: land
+    variables:
+      limo:
+        units: kg/m2/s
+        long_name: limo
+        background: 3.74097e-13
+        sources:
+          - lon: 40.0
+            lat: 25.0
+            sigma_deg: 15.0
+            amplitude: 2.53159e-11
+          - lon: -80.0
+            lat: 5.0
+            sigma_deg: 15.0
+            amplitude: 2.53159e-11
+          - lon: 135.0
+            lat: -25.0
+            sigma_deg: 15.0
+            amplitude: 2.53159e-11
+        diurnal:
+        seasonal:
+        vertical:
+      isoprene:
+        units: kg/m2/s
+        long_name: isoprene
+        background: 1.79844e-11
+        sources:
+          - lon: 40.0
+            lat: 25.0
+            sigma_deg: 15.0
+            amplitude: 1.43718e-09
+          - lon: -80.0
+            lat: 5.0
+            sigma_deg: 15.0
+            amplitude: 1.43718e-09
+          - lon: 135.0
+            lat: -25.0
+            sigma_deg: 15.0
+            amplitude: 1.43718e-09
+        diurnal:
+        seasonal:
+        vertical:
+      mtpa:
+        units: kg/m2/s
+        long_name: mtpa
+        background: 3.44989e-12
+        sources:
+          - lon: 40.0
+            lat: 25.0
+            sigma_deg: 15.0
+            amplitude: 2.15747e-10
+          - lon: -80.0
+            lat: 5.0
+            sigma_deg: 15.0
+            amplitude: 2.15747e-10
+          - lon: 135.0
+            lat: -25.0
+            sigma_deg: 15.0
+            amplitude: 2.15747e-10
+        diurnal:
+        seasonal:
+        vertical:
+      mtpo:
+        units: kg/m2/s
+        long_name: mtpo
+        background: 1.66244e-12
+        sources:
+          - lon: 40.0
+            lat: 25.0
+            sigma_deg: 15.0
+            amplitude: 1.22297e-10
+          - lon: -80.0
+            lat: 5.0
+            sigma_deg: 15.0
+            amplitude: 1.22297e-10
+          - lon: 135.0
+            lat: -25.0
+            sigma_deg: 15.0
+            amplitude: 1.22297e-10
+        diurnal:
+        seasonal:
+        vertical:
+    layout:
+      format: netcdf
+      model: NETCDF4
+      lon_name: lon
+      lat_name: lat
+      lev_name: lev
+      time_name: time
+      dtype: float32
+      fill_value: -9.999999848243207e+30
+      lev_before_time: false
+      write_bounds_and_area: false
+      daily_record_hour: 0.0
+      time_dimension: true
+      lev_values:
+      lev_units:
+      time_axis:
+  volcano:
+    file: ExtData/volcanic/so2_volcanic_emissions_Carns.%y4%m2%d2.rc
+    cadence: daily
+    regrid_method: none
+    cece_mapalgo: passthrough
+    grid: inventory
+    is_3d: false
+    level_order: bottom_up
+    masked_by: none
+    variables: {}
+    layout:
+      format: point_table
+      model: NETCDF4
+      lon_name: lon
+      lat_name: lat
+      lev_name: lev
+      time_name: time
+      dtype: float32
+      fill_value:
+      lev_before_time: false
+      write_bounds_and_area: true
+      daily_record_hour: 12.0
+      time_dimension: true
+      lev_values:
+      lev_units:
+      time_axis:
+  dust:
+    file: ExtData/dust/FENGSHA_2022_NESDIS_inputs_10km_v3.2.nc
+    cadence: static
+    regrid_method: neareststod
+    cece_mapalgo: nn
+    grid: g3600x1800
+    is_3d: false
+    level_order: bottom_up
+    masked_by: land
+    variables:
+      clayfrac:
+        units: '-'
+        long_name: Fractional Clay Content
+        background: 0.235887
+        sources:
+          - lon: 40.0
+            lat: 25.0
+            sigma_deg: 15.0
+            amplitude: 0.434113
+          - lon: -80.0
+            lat: 5.0
+            sigma_deg: 15.0
+            amplitude: 0.434113
+          - lon: 135.0
+            lat: -25.0
+            sigma_deg: 15.0
+            amplitude: 0.434113
+        diurnal:
+        seasonal:
+        vertical:
+      sandfrac:
+        units: '-'
+        long_name: Fractional Sand Content
+        background: 0.445161
+        sources:
+          - lon: 40.0
+            lat: 25.0
+            sigma_deg: 15.0
+            amplitude: 0.523839
+          - lon: -80.0
+            lat: 5.0
+            sigma_deg: 15.0
+            amplitude: 0.523839
+          - lon: 135.0
+            lat: -25.0
+            sigma_deg: 15.0
+            amplitude: 0.523839
+        diurnal:
+        seasonal:
+        vertical:
+      sep:
+        units: count
+        long_name: Soil Erosion Potential
+        background: 0.0897502
+        sources:
+          - lon: 40.0
+            lat: 25.0
+            sigma_deg: 15.0
+            amplitude: 0.72953
+          - lon: -80.0
+            lat: 5.0
+            sigma_deg: 15.0
+            amplitude: 0.72953
+          - lon: 135.0
+            lat: -25.0
+            sigma_deg: 15.0
+            amplitude: 0.72953
+        diurnal:
+        seasonal:
+        vertical:
+      uthres:
+        units: '-'
+        long_name: threshold velocity u*t
+        background: 550.131
+        sources:
+          - lon: 40.0
+            lat: 25.0
+            sigma_deg: 15.0
+            amplitude: 448.869
+          - lon: -80.0
+            lat: 5.0
+            sigma_deg: 15.0
+            amplitude: 448.869
+          - lon: 135.0
+            lat: -25.0
+            sigma_deg: 15.0
+            amplitude: 448.869
+        diurnal:
+        seasonal:
+        vertical:
+    layout:
+      format: netcdf
+      model: NETCDF4
+      lon_name: lon
+      lat_name: lat
+      lev_name: lev
+      time_name: time
+      dtype: float32
+      fill_value:
+      lev_before_time: false
+      write_bounds_and_area: false
+      daily_record_hour: 12.0
+      time_dimension: false
+      lev_values:
+      lev_units:
+      time_axis:
+met:
+  surface_pressure_pa: 101325.0
+  temperature_equator_k: 300.0
+  temperature_pole_k: 250.0
+  lapse_rate_k_per_level: 0.6
+  tropopause_level: 90
+  zonal_wind_amplitude_m_s: 25.0
+  pbl_height_m: 800.0
+  soil_moisture: 0.25
+  land_use_class: 1
+  diurnal_amplitude_k: 5.0
+  diurnal_peak_local_hour: 14.0
+  n_soil_layers: 4
+  pressure_top_pa: 100.0
+  orography_max_m: 1500.0
+  specific_humidity_surface: 0.01
+  cloud_fraction_max: 0.4
+  friction_velocity_land_m_s: 0.3
+  friction_velocity_ocean_m_s: 0.2
+  roughness_length_land_cm: 10.0
+  roughness_length_ocean_cm: 0.01
+  shortwave_peak_w_m2: 900.0
+  sensible_heat_peak_w_m2: 100.0
+  latent_heat_peak_w_m2: 80.0
+  aerodynamic_conductance_s_m: 0.01
+  canopy_resistance_s_m: 100.0
+  leaf_area_index: 2.0
+  vegetation_fraction: 0.6
+  sea_ice_latitude_deg: 70.0
+  snow_latitude_deg: 65.0
+  soil_type_class: 1
+  tracers:
+    - name: sphum
+      units: kg/kg
+    - name: seas1
+      units: ug/kg
+    - name: seas2
+      units: ug/kg
+    - name: seas3
+      units: ug/kg
+    - name: seas4
+      units: ug/kg
+    - name: seas5
+      units: ug/kg
+    - name: so2
+      units: kg/kg
+    - name: no3
+      units: kg/kg
+    - name: oh
+      units: kg/kg
+    - name: h2o2
+      units: kg/kg
+    - name: so4
+      units: ug/kg
+    - name: oc1
+      units: ug/kg
+    - name: oc2
+      units: ug/kg
+    - name: bc1
+      units: ug/kg
+    - name: bc2
+      units: ug/kg

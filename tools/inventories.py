@@ -11,9 +11,13 @@ float32 with deflate. Totals (sum of field times area per record and level) are 
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+import itertools
+import shutil
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
+from typing import Literal, cast
 
+import netCDF4
 import numpy as np
 import xarray as xr
 from numpy.typing import NDArray
@@ -26,6 +30,14 @@ from tools.settings import get_settings
 log = get_logger("inventories")
 
 Float2D = NDArray[np.float64]
+XarrayFormat = Literal["NETCDF4", "NETCDF4_CLASSIC", "NETCDF3_64BIT", "NETCDF3_CLASSIC"]
+# netCDF4's data-model names (the manifest's `layout.model`) -> xarray's `to_netcdf(format=)` spelling.
+XARRAY_FORMATS: dict[mf.NetcdfModel, XarrayFormat] = {
+    "NETCDF4": "NETCDF4",
+    "NETCDF4_CLASSIC": "NETCDF4_CLASSIC",
+    "NETCDF3_CLASSIC": "NETCDF3_CLASSIC",
+    "NETCDF3_64BIT_OFFSET": "NETCDF3_64BIT",
+}
 
 
 class VariableEncoding(mf.Strict):
@@ -115,7 +127,13 @@ class VariableTotals(mf.Strict):
 
 
 class CategoryTotals(mf.Strict):
-    file: Path = Field(description="The category file the totals were computed from.")
+    file: Path = Field(
+        description="The category file the totals were computed from (the token template for a daily category)."
+    )
+    files: list[Path] | None = Field(
+        default=None,
+        description="Every file written for the category in record order (daily categories have one per day); None for one file.",
+    )
     times: list[AwareDatetime] | None = Field(
         default=None,
         description="Time stamp of each record, in record order (UTC); None for totals written before task 4.",
@@ -148,8 +166,11 @@ def lon_bounds(grid: mf.LatLonGrid) -> Float2D:
 
 
 def lat_bounds(grid: mf.LatLonGrid) -> Float2D:
+    """Cell bounds; a pole_centred grid's polar half cells are clipped to ±90."""
     c = lat_centres(grid)
-    return np.stack([c - grid.dlat / 2, c + grid.dlat / 2], axis=1)
+    return np.clip(
+        np.stack([c - grid.dlat / 2, c + grid.dlat / 2], axis=1), -90.0, 90.0
+    )
 
 
 def cell_area(grid: mf.LatLonGrid, radius_m: float) -> Float2D:
@@ -199,41 +220,35 @@ def land_fraction(grid: mf.LatLonGrid, mask: mf.LandMask) -> Float2D:
     return np.clip(total, 0.0, 1.0)
 
 
-def _grid_dataset(grid: mf.LatLonGrid, radius_m: float) -> xr.Dataset:
-    ds = xr.Dataset(
-        data_vars={
-            "lon_bnds": (("lon", "nv"), lon_bounds(grid)),
-            "lat_bnds": (("lat", "nv"), lat_bounds(grid)),
+def _grid_dataset(
+    grid: mf.LatLonGrid, radius_m: float, layout: mf.FileLayout | None = None
+) -> xr.Dataset:
+    """Coordinates named by the layout (lon/lat by default), with bounds and the area variable unless the layout says not to."""
+    lon_name = layout.lon_name if layout else "lon"
+    lat_name = layout.lat_name if layout else "lat"
+    with_extras = layout is None or layout.write_bounds_and_area
+    lon_attrs = {"units": "degrees_east", "standard_name": "longitude", "axis": "X"}
+    lat_attrs = {"units": "degrees_north", "standard_name": "latitude", "axis": "Y"}
+    data_vars: dict[str, tuple[tuple[str, ...], Float2D, dict[str, str]]] = {}
+    if with_extras:
+        lon_attrs["bounds"] = "lon_bnds"
+        lat_attrs["bounds"] = "lat_bnds"
+        data_vars = {
+            "lon_bnds": ((lon_name, "nv"), lon_bounds(grid), {}),
+            "lat_bnds": ((lat_name, "nv"), lat_bounds(grid), {}),
             "area": (
-                ("lat", "lon"),
+                (lat_name, lon_name),
                 cell_area(grid, radius_m),
                 {"units": "m2", "long_name": "cell area", "standard_name": "cell_area"},
             ),
-        },
+        }
+    return xr.Dataset(
+        data_vars=data_vars,
         coords={
-            "lon": (
-                "lon",
-                lon_centres(grid),
-                {
-                    "units": "degrees_east",
-                    "standard_name": "longitude",
-                    "axis": "X",
-                    "bounds": "lon_bnds",
-                },
-            ),
-            "lat": (
-                "lat",
-                lat_centres(grid),
-                {
-                    "units": "degrees_north",
-                    "standard_name": "latitude",
-                    "axis": "Y",
-                    "bounds": "lat_bnds",
-                },
-            ),
+            lon_name: (lon_name, lon_centres(grid), lon_attrs),
+            lat_name: (lat_name, lat_centres(grid), lat_attrs),
         },
     )
-    return ds
 
 
 def write_land_mask(manifest: mf.Manifest) -> Path:
@@ -286,8 +301,72 @@ def _cf_date(when: datetime) -> str:
     return when.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S")
 
 
-def time_axis(cadence: mf.Cadence, clock: mf.Clock) -> TimeAxis:
-    """hourly: 25 centred records from start to start+duration; monthly: 12 mid-month records of the start year; static: one record at start."""
+def _days(clock: mf.Clock) -> list[date]:
+    """The calendar days (UTC) a run touches, in order."""
+    first = clock.start.astimezone(UTC).date()
+    last = (clock.end - timedelta(microseconds=1)).astimezone(UTC).date()
+    return [first + timedelta(days=i) for i in range((last - first).days + 1)]
+
+
+def _decode(values: list[float], units: str, calendar: str) -> list[datetime]:
+    decoded = netCDF4.num2date(
+        np.asarray(values, dtype=np.float64),
+        units=units,
+        calendar=calendar,
+        only_use_cftime_datetimes=False,
+        only_use_python_datetimes=True,
+    )
+    dates = decoded if isinstance(decoded, np.ndarray) else np.array([decoded])
+    return [d.replace(tzinfo=UTC) for d in cast(list[datetime], dates.ravel().tolist())]
+
+
+def explicit_time_axis(cadence: mf.Cadence, axis: mf.ExplicitTimeAxis) -> TimeAxis:
+    """A file's own time coordinate written verbatim; bounds are the midpoints between records (a single record gets ±0.5)."""
+    values = axis.values
+    if len(values) > 1:
+        mids = [(a + b) / 2 for a, b in itertools.pairwise(values)]
+        edges = [
+            values[0] - (mids[0] - values[0]),
+            *mids,
+            values[-1] + (values[-1] - mids[-1]),
+        ]
+    else:
+        edges = [values[0] - 0.5, values[0] + 0.5]
+    return TimeAxis(
+        cadence=cadence,
+        values=list(values),
+        bounds=list(itertools.pairwise(edges)),
+        units=axis.units,
+        calendar=axis.calendar,
+        stamps=_decode(values, axis.units, axis.calendar),
+    )
+
+
+def daily_time_axis(day: date, record_hour: float) -> TimeAxis:
+    """One record at `record_hour` of the day, in hours since the day's 00:00 UTC (the CEDS, MEGAN and QFED daily files)."""
+    midnight = datetime(day.year, day.month, day.day, tzinfo=UTC)
+    return TimeAxis(
+        cadence="daily",
+        values=[record_hour],
+        bounds=[(0.0, 24.0)],
+        units=f"hours since {_cf_date(midnight)}",
+        stamps=[midnight + timedelta(hours=record_hour)],
+    )
+
+
+def time_axis(
+    cadence: mf.Cadence,
+    clock: mf.Clock,
+    layout: mf.FileLayout | None = None,
+    day: date | None = None,
+) -> TimeAxis:
+    """hourly: 25 centred records from start to start+duration; daily: one record of `day`; monthly: 12 mid-month records of the start year (or the layout's explicit axis); static: one record at start (or the explicit axis)."""
+    if layout is not None and layout.time_axis is not None:
+        return explicit_time_axis(cadence, layout.time_axis)
+    if cadence == "daily":
+        if day is None:
+            raise ValueError("a daily time axis needs the day")
+        return daily_time_axis(day, layout.daily_record_hour if layout else 12.0)
     if cadence == "hourly":
         hours = list(range(clock.duration_hours + 1))
         return TimeAxis(
@@ -410,102 +489,218 @@ def field_values(
 # --- files -------------------------------------------------------------------------------------------------
 
 
-def write_category(
-    manifest: mf.Manifest, name: str, fraction: Float2D | None
-) -> CategoryTotals:
-    """Write one category file and return its totals. `fraction` is the land fraction on the category's grid (or None)."""
-    category = manifest.categories[name]
-    grid = manifest.grids[category.grid]
-    axis = time_axis(category.cadence, manifest.clock)
-    ds = _grid_dataset(grid, manifest.earth_radius_m)
-    ds = ds.assign_coords(
-        time=(
-            "time",
-            np.array(axis.values, dtype=np.float64),
-            {
-                "units": axis.units,
-                "calendar": axis.calendar,
-                "standard_name": "time",
-                "axis": "T",
-                "bounds": "time_bnds",
-            },
-        )
+def _dims(layout: mf.FileLayout | None, is_3d: bool) -> tuple[str, ...]:
+    lon = layout.lon_name if layout else "lon"
+    lat = layout.lat_name if layout else "lat"
+    time = layout.time_name if layout else "time"
+    lev = layout.lev_name if layout else "lev"
+    if not is_3d:
+        return (time, lat, lon)
+    return (
+        (lev, time, lat, lon)
+        if layout and layout.lev_before_time
+        else (time, lev, lat, lon)
     )
-    ds["time_bnds"] = (("time", "nv"), np.array(axis.bounds, dtype=np.float64))
-    dims: tuple[str, ...] = ("time", "lat", "lon")
-    if category.is_3d:
-        ds = ds.assign_coords(
-            lev=(
-                "lev",
-                np.arange(manifest.clock.n_levels, dtype=np.int32),
-                {
-                    "long_name": "model level index",
-                    "positive": "up" if category.level_order == "bottom_up" else "down",
-                    "axis": "Z",
-                    "level_order": category.level_order,
-                },
-            )
-        )
-        dims = ("time", "lev", "lat", "lon")
-    area = cell_area(grid, manifest.earth_radius_m)
-    totals: dict[str, VariableTotals] = {}
-    deflate = VariableEncoding.from_settings().as_encoding()
-    encoding: dict[str, dict[str, object]] = {
-        n: coordinate_encoding()
-        for n in ("lon", "lat", "lon_bnds", "lat_bnds", "area", "time", "time_bnds")
+
+
+def write_file(
+    manifest: mf.Manifest,
+    path: Path,
+    names: list[str],
+    fraction: Float2D | None,
+    day: date | None = None,
+) -> dict[str, CategoryTotals]:
+    """Write one inventory file holding the variables of the categories `names` (which share grid, cadence and layout) and return their totals.
+
+    `fraction` is the land fraction on the file's grid (or None); `day` is the calendar day of a daily file.
+    """
+    first = manifest.categories[names[0]]
+    layout = first.layout
+    grid = manifest.grids[first.grid]
+    axis = time_axis(first.cadence, manifest.clock, layout, day)
+    time_name = layout.time_name if layout else "time"
+    with_extras = layout is None or layout.write_bounds_and_area
+    timeless = layout is not None and not layout.time_dimension
+    ds = _grid_dataset(grid, manifest.earth_radius_m, layout)
+    time_attrs = {
+        "units": axis.units,
+        "calendar": axis.calendar,
+        "standard_name": "time",
+        "axis": "T",
     }
-    for var_name, variable in category.variables.items():
-        values = field_values(variable, category, grid, manifest.clock, fraction, axis)
-        ds[var_name] = (
-            dims,
-            values,
-            {"units": variable.units, "long_name": variable.long_name},
+    if with_extras:
+        time_attrs["bounds"] = "time_bnds"
+    if not timeless:
+        ds = ds.assign_coords(
+            {
+                time_name: (
+                    time_name,
+                    np.array(axis.values, dtype=np.float64),
+                    time_attrs,
+                )
+            }
         )
-        encoding[var_name] = dict(deflate)
-        per_level = values.astype(np.float64) * area
-        summed = per_level.sum(axis=(-2, -1))
-        records = summed if category.is_3d else summed[:, None]
-        totals[var_name] = VariableTotals(
-            units=variable.units, records=records.tolist()
-        )
-        log.info(
-            "%s/%s: %d records, total x area first record %.6e (%s m2)",
-            name,
-            var_name,
-            values.shape[0],
-            records[0].sum(),
-            variable.units,
+    if with_extras and not timeless:
+        ds["time_bnds"] = ((time_name, "nv"), np.array(axis.bounds, dtype=np.float64))
+    dims = _dims(layout, first.is_3d)
+    if timeless:
+        dims = tuple(d for d in dims if d != time_name)
+    if first.is_3d:
+        lev_name = layout.lev_name if layout else "lev"
+        lev_attrs: dict[str, str] = {
+            "positive": "up" if first.level_order == "bottom_up" else "down",
+            "axis": "Z",
+            "level_order": first.level_order,
+        }
+        if layout is not None and layout.lev_values is not None:
+            if len(layout.lev_values) != manifest.clock.n_levels:
+                raise ValueError(
+                    f"layout.lev_values has {len(layout.lev_values)} entries, the clock has {manifest.clock.n_levels} levels"
+                )
+            lev_coord = np.array(layout.lev_values, dtype=np.float64)
+            if layout.lev_units is not None:
+                lev_attrs["units"] = layout.lev_units
+        else:
+            lev_coord = np.arange(manifest.clock.n_levels, dtype=np.int32)
+            lev_attrs["long_name"] = "model level index"
+        ds = ds.assign_coords({lev_name: (lev_name, lev_coord, lev_attrs)})
+    area = cell_area(grid, manifest.earth_radius_m)
+    dtype = np.dtype(layout.dtype if layout else "float32")
+    classic = layout is not None and layout.model != "NETCDF4"
+    deflate = {} if classic else VariableEncoding.from_settings().as_encoding()
+    encoding: dict[str, dict[str, object]] = {
+        str(n): coordinate_encoding() for n in [*ds.coords, *ds.data_vars]
+    }
+    totals: dict[str, CategoryTotals] = {}
+    for name in names:
+        category = manifest.categories[name]
+        per_category: dict[str, VariableTotals] = {}
+        for var_name, variable in category.variables.items():
+            values = field_values(
+                variable, category, grid, manifest.clock, fraction, axis
+            )
+            per_level = values.astype(np.float64) * area
+            summed = per_level.sum(axis=(-2, -1))
+            records = summed if category.is_3d else summed[:, None]
+            if category.is_3d and layout is not None and layout.lev_before_time:
+                values = np.swapaxes(values, 0, 1)
+            if timeless:
+                values = values[0]
+            ds[var_name] = (
+                dims,
+                values.astype(dtype),
+                {"units": variable.units, "long_name": variable.long_name},
+            )
+            encoding[var_name] = dict(deflate)
+            if layout is not None and layout.fill_value is not None:
+                encoding[var_name]["_FillValue"] = np.asarray(
+                    layout.fill_value, dtype=dtype
+                )
+            per_category[var_name] = VariableTotals(
+                units=variable.units, records=records.tolist()
+            )
+            log.info(
+                "%s/%s: %d records, total x area first record %.6e (%s m2)",
+                name,
+                var_name,
+                len(axis.values),
+                records[0].sum(),
+                variable.units,
+            )
+        totals[name] = CategoryTotals(
+            file=category.file, files=[path], times=axis.stamps, variables=per_category
         )
     ds.attrs = FileAttributes(
         Conventions=get_settings().cf_conventions,
-        title=f"analytic {name} inputs for the coupling prototypes",
-        category=name,
-        cadence=category.cadence,
-        regrid_method=category.regrid_method,
-        cece_mapalgo=category.cece_mapalgo,
-        masked_by=category.masked_by,
+        title=f"analytic {', '.join(names)} inputs for the coupling prototypes",
+        category=",".join(names),
+        cadence=first.cadence,
+        regrid_method=first.regrid_method,
+        cece_mapalgo=first.cece_mapalgo,
+        masked_by=first.masked_by,
         resolution=manifest.resolution,
     ).as_attrs()
-    category.file.parent.mkdir(parents=True, exist_ok=True)
-    ds.to_netcdf(category.file, format="NETCDF4", encoding=encoding)
-    log.info("wrote %s", category.file)
-    return CategoryTotals(file=category.file, times=axis.stamps, variables=totals)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    ds.to_netcdf(
+        path,
+        format=XARRAY_FORMATS[layout.model if layout else "NETCDF4"],
+        encoding=encoding,
+    )
+    log.info("wrote %s", path)
+    return totals
+
+
+def write_category(
+    manifest: mf.Manifest, name: str, fraction: Float2D | None
+) -> CategoryTotals:
+    """Write the (single, non-daily) file of one category and return its totals; the analytic profile's entry point."""
+    return write_file(manifest, manifest.categories[name].file, [name], fraction)[name]
+
+
+def _concatenate(parts: list[CategoryTotals]) -> CategoryTotals:
+    """The totals of a daily category's files, in day order."""
+    first = parts[0]
+    variables = {
+        v: VariableTotals(
+            units=first.variables[v].units,
+            records=[r for part in parts for r in part.variables[v].records],
+        )
+        for v in first.variables
+    }
+    return CategoryTotals(
+        file=first.file,
+        files=[f for part in parts for f in part.files or []],
+        times=[s for part in parts for s in part.times or []],
+        variables=variables,
+    )
+
+
+def copy_point_table(manifest: mf.Manifest, name: str) -> list[Path]:
+    """Copy the real volcanic tables (settings `extdata_defaults_dir`/`volcanic_dirname`) to the category's files for the clock."""
+    settings = get_settings()
+    source_dir = settings.extdata_defaults_dir / settings.volcanic_dirname
+    written: list[Path] = []
+    for target in manifest.categories[name].files_for(manifest.clock):
+        source = source_dir / target.name
+        if not source.exists():
+            raise ValueError(
+                f"point table {source} for category {name!r} is not checked in"
+            )
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+        log.info("copied %s -> %s", source, target)
+        written.append(target)
+    return written
 
 
 def generate_inventories(manifest: mf.Manifest) -> Totals:
-    """Land mask, every category file and totals.yaml under the manifest's inventories directory."""
+    """Land mask, every inventory file (one per file path and day, shared by the categories that name it), the point tables, and totals.yaml."""
     write_land_mask(manifest)
     fractions: dict[str, Float2D] = {}
     categories: dict[str, CategoryTotals] = {}
-    for name, category in manifest.categories.items():
+    for template, names in manifest.categories_by_file().items():
+        first = manifest.categories[names[0]]
+        if first.is_point_table:
+            copy_point_table(manifest, names[0])
+            continue
         fraction = None
-        if category.masked_by != "none":
-            if category.grid not in fractions:
-                fractions[category.grid] = land_fraction(
-                    manifest.grids[category.grid], manifest.land_mask
+        if any(manifest.categories[n].masked_by != "none" for n in names):
+            if first.grid not in fractions:
+                fractions[first.grid] = land_fraction(
+                    manifest.grids[first.grid], manifest.land_mask
                 )
-            fraction = fractions[category.grid]
-        categories[name] = write_category(manifest, name, fraction)
+            fraction = fractions[first.grid]
+        parts: dict[str, list[CategoryTotals]] = {n: [] for n in names}
+        if first.cadence == "daily":
+            days = _days(manifest.clock)
+            for day, path in zip(days, first.files_for(manifest.clock), strict=True):
+                for n, part in write_file(manifest, path, names, fraction, day).items():
+                    parts[n].append(part)
+        else:
+            for n, part in write_file(manifest, template, names, fraction).items():
+                parts[n].append(part)
+        for n in names:
+            categories[n] = _concatenate(parts[n])
     totals = Totals(categories=categories)
     totals.to_yaml(manifest.inventories_dir / get_settings().totals_filename)
     return totals

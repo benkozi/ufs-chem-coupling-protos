@@ -165,6 +165,8 @@ Run from the repository root (`python -m`, not the script path: `uv` does not in
 | `--step-seconds N` | the defaults file's `clock.step_seconds` (720) | coupling step; must divide the run length |
 | `--levels N` | the defaults file's `clock.n_levels` (127) | model levels (`NPZ`); the `lev` size of `gmi.nc` |
 | `--inventory-resolution DEG` | the defaults file's `grids.inventory` (1°) | spacing of the 2-D inventory grid; `360/DEG` must be an integer |
+| `--profile {analytic,realistic}` | `analytic` | which parameter set: the six mock categories, or CATChem's production inventories mirrored from the ExtData catalog (section 15) |
+| `--grid-factor N` | 1 | coarsen every inventory grid N times (N must divide the cell counts); the realistic profile's CI size is 10 |
 | `--fix-url URL` | the settings' `fix_url` (`$PROTOS_FIX_URL`, the EMC server) | directory URL template with `{resolution}` |
 | `--log-level LEVEL` | `$PROTOS_LOG_LEVEL` or `INFO` | logging through `tools/log.py` |
 
@@ -887,3 +889,68 @@ CATChem's own tests for the switch live in its suite (`tests/test_config_validat
 | conservation, `anthro/SO2` level 1 | 1.529e-6 (unchanged) |
 | memory per PET at the end, max over PETs (physical) | 869 MB |
 | `proto_cece_met_catchem_unconnected_fails` | 1.3 s; `Initialize (user) failed` on stdout, the named error in all six PET logs |
+
+## 15. Realistic synthetic data: the ExtData catalog and the realistic profile (issue #17)
+
+Two parts: a scrape of what a real `catchem_control` run reads (the files CATChem opened, then their layout and statistics on the platform that holds them), and a second parameter set of the mock data step that mirrors it. The analytic profile is unchanged: `--profile analytic` (the default) writes content-identical files to the task-2 command (checked 2026-11-06 against the `develop` tooling on this Mac, every variable, attribute and total equal; `totals.yaml` gains a `files` list per category).
+
+### 15.1 The catalog of a run's file reads (here)
+
+The issue's PET log comes from CATChem `benkozi/CATChem@feature/log-all-filepaths` (`3096a859`, on `v2.1.0`, not the prototype's companion pin), whose readers log `CATCHEM_FILE_READ: format=<yaml|netcdf|point_ascii|binary> source=<routine> path=<path>`. The companion branch's task-7 line `CATChem: emission open category=<c> reader=<r> path=<p>` is parsed too.
+
+```bash
+uv run python -m tools.extdata_catalog scan-log PET000.ESMF_LogFile.log --out tools/defaults/extdata/file_catalog.json
+```
+
+The catalog (`tools/extdata.py` `FileCatalog`, checked in) lists every unique path with its format, role (`config`, `optics`, `inventory`, `point_table`), reader counts, the CATChem categories and model times that read it (from the preceding `catchem_emis_update: reading emission for <c> @ <t>` or `catchem_emis_populate_category` line), the PETs and the point count of a volcanic table. For the issue's log: 30 files, 4 config, 6 optics, 18 inventory, 2 point tables (97 points each), 110 log lines, PET 0 only. `tools/tests/fixtures/catchem_file_read_PET000.txt` is the log trimmed to the lines the parser reads; a test keeps the checked-in catalog equal to a fresh scan of it.
+
+### 15.2 Describing the files on Ursa
+
+Only the script and the catalog travel; uv installs the dependencies (netCDF4, numpy) from the script's PEP 723 header at run time (the first run needs outbound HTTPS; a cached environment is reused afterwards; `UV_CACHE_DIR` can point at scratch).
+
+```bash
+scp tools/extdata_catalog.py tools/defaults/extdata/file_catalog.json ursa:/path/of/choice/
+```
+
+```bash
+UV=/path/to/uv
+EXTDATA=/scratch4/NAGAPE/epic/role-epic/UFS-WM_RT/NEMSfv3gfs/input-data-20260617/GOCART/p8/ExtData
+cd /path/of/choice && $UV run --script extdata_catalog.py describe --extdata-root "$EXTDATA" --catalog file_catalog.json --out extdata_headers.json --copy-tables volcanic/
+```
+
+```bash
+scp 'ursa:/path/of/choice/{extdata_headers.json,volcanic/*.rc}' tools/defaults/extdata/
+```
+
+Per catalogued `ExtData/` file the headers JSON (`ExtDataHeaders`) records the NetCDF model, size, dimensions, every variable with dtype, dimensions, shape and typed attributes, the detected `lon`/`lat`/`lev`/`time` axes (count, extent, spacing, uniformity, direction, every value, decoded time stamps), per data variable the value statistics (min, max, mean, std, non-zero and fill fractions, per-record sums and, on uniform grids, area-weighted sums; `--no-stats` skips them, `--stats-max-bytes` caps the unpacked size, default 8 GiB), and for a volcanic table the parsed rows (`PointTable`: `lat lon emission bottom top`, `degrees_north degrees_east "kg S s-1" m m` as `catchem_emis_read_points` reads them, row count, malformed rows, ranges, total emission). `--copy-tables` copies the tables verbatim. Here, `uv run --script tools/extdata_catalog.py --help` took 5.4 s including the environment build (2026-11-06). **Run on Ursa on 2026-11-06** (uv resolved Python 3.14.7; 26 files described, every variable with statistics): `tools/defaults/extdata/extdata_headers.json` (2.1 MB) and `volcanic/so2_volcanic_emissions_Carns.2021032{2,3}.rc` (97 rows each, 337.3 kg S s-1 per day) are checked in; `test_checked_in_headers_validate_when_present` validates them. What the real files look like: every 0.1° inventory (CEDS, QFED, MEGAN, HTAP, FENGSHA 10 km inputs) is 3600 x 1800 from -179.95; CEDS and MEGAN are `NETCDF4_CLASSIC`, float32 with fill -1e31, one record at 00Z (`hours since <day> 00:00:00 GMT`), a `lev` dimension of size 1 the data variables do not use, and a float64 `AREA` map first; QFED is one record at 12Z (`minutes since`); the nine HTAP climatologies have 12 records (`hours since 2010-01-15`) and fill 1e20; GMI is 144 x 91 (pole-centred) x 127 levels, top-down pressures 0.013 to 998.76, 14 records (`minutes since 2020-12-17`), empty unit strings and fill 1e15; DMS is 360 x 181 (pole-centred) on `longitude`/`latitude`, 12 records; the FENGSHA soil inputs (`clayfrac`, `sandfrac`, `sep`, `uthres`) have no time dimension at all while `albedo_drag` in the same file has 12; the 9 km drag file is 4444 x 2222 float64 with NaN fill and month-start records.
+
+### 15.3 The realistic profile
+
+```bash
+uv run python -m tools.realistic_defaults --catchem-config extern/CATChem/tests/Configs/Default/CATChem_new_config.yml --emission-map extern/CATChem/tests/Configs/Default/CATChem_emission.yml
+```
+
+writes `tools/defaults/manifest_realistic.yaml` (`--headers`, `--catalog`, `--base`, `--out` default to the settings) from the headers, the catalog, CATChem's production `extemis` block and emission map, and the analytic defaults (clock, land mask, meteorology, Earth radius). Per catalogued category: the CATChem template as the file path (`ExtData/...`, relative to `--out`, daily files with `%y4%m2%d2`), `frequency` as the cadence, the config's `regrid_method` (`neareststod` maps to CECE `nn`), a grid from the file's axes (count, extent, origin; pole-centred when the first latitude is ±90; a non-uniform axis is reproduced as uniform with the same count and extent), `is_2d` and `reverse_vertical` (`top_down`), a `layout` (NetCDF model, coordinate names, dtype, fill value, dimension order, the file's own monthly or static time coordinate, the daily record hour; no bounds or area variables), the emission map's variables with the file's units and long names, and magnitudes from the statistics (background = mean, source amplitude = max above it, sources on the mask's continents, ocean spots for `dms`, one global source for `gmi` and the aviation categories; analytic fallbacks with a warning when a variable has no statistics). Point categories (`format: volcano`) become `layout: {format: point_table}` with no variables; the mock step copies the checked-in tables. Categories in the config but not in the catalog (`point`, `INPUT/PT.nc`) are left out with a warning; a mapped variable missing from the file, a missing or broken header, a 3-D file whose level count is not the clock's `n_levels`, variables without a time dimension outside a static category, or an unknown NetCDF model is exit 2 by name. Facts the real files forced: dtype, fill and the time-dimension flag come from the category's own variable (CEDS and MEGAN start with a float64 `AREA` map; the FENGSHA soil inputs share a file with a time-bearing field), the file's level values and units are written verbatim (`layout.lev_values`), a NaN fill becomes `null` (xarray writes NaN by default), an empty unit string falls back to the emission map's spelling, and `ship` is masked by the ocean. Scraped magnitudes are rounded to six significant digits, so yamlfix (the pre-commit hook, run on the builder's output before committing) leaves every value unchanged; the checked-in `manifest_realistic.yaml` (2026-11-06: 19 categories, 5 grids: `inventory` for the land mask, `g3600x1800`, `g144x91p`, `g360x181p`, `g4444x2222`) is pinned by two digests and by rebuilding an equal model in `test_realistic_defaults.py`.
+
+```bash
+uv run python -m tools.make_mock_data --resolution C48 --out data/C48_realistic --profile realistic --grid-factor 10
+```
+
+writes the 20 files under `data/C48_realistic/ExtData/<real relative path>` (its own directory: the analytic set's `manifest.yaml` and `inventories/totals.yaml` under `data/C48` are what the generator and conservation tests read, and the first cloud run of the fixture into `data/C48` overwrote them, failing 14 `ci` tests) (one file per calendar day for daily categories, the CEDS file written once with the ten variables of `anthro1`, `anthro2` and `ship`), copies the volcanic tables from `tools/defaults/extdata/volcanic/`, and records the coarsened grids in `manifest.yaml` (the factor rounds the cell counts and keeps the extent, so 4444 x 2222 becomes 444 x 222 and pole-centred grids keep their polar centres). Measured here: 1.5 s, 20 MB at factor 10. The resolution is the performance lever for the generation and for CECE's ingest: CTest registers `make_mock_data_realistic` (`ci`, factor 10, fixture `mockdata_realistic`), `gen_configs_realistic_refused` (`ci`: `gen_configs.py` on the realistic manifest is exit 2 by name, `hosted import anthro/SO2 is not a variable of the manifest`, until issue #16 teaches the generator the production categories) and `make_mock_data_realistic_c96` (`c96`, factor 5, 0.5°; the real 0.1° sizes are `--grid-factor 1` by hand, about 4.5 GB), all behind `if(EXISTS tools/defaults/manifest_realistic.yaml)` in `tests/mockdata/CMakeLists.txt`.
+
+### Schema additions (`tools/manifest.py`)
+
+`Cadence` gains `daily`, `RegridMethod` `neareststod`, `CeceMapalgo` `nn`; `LatLonGrid.pole_centred` and `LatLonGrid.coarsened(factor)` (rounding, any factor); `Category.layout: FileLayout` (`format`, `model`, `lon_name`, `lat_name`, `lev_name`, `time_name`, `dtype`, `fill_value`, `lev_before_time`, `write_bounds_and_area`, `daily_record_hour`, `time_dimension`, `lev_values`, `lev_units`, `time_axis: ExplicitTimeAxis {units, calendar, values}`); several categories may share a file (same grid, cadence, levels and layout, distinct variable names) and any category name is allowed (the generator's defaults still decide what `gen_configs.py` accepts). `CategoryTotals.files` lists every file written for a category. Settings: `extdata_defaults_dir`, `file_catalog_filename`, `extdata_headers_filename`, `volcanic_dirname`, `realistic_defaults_file` (`PROTOS_REALISTIC_DEFAULTS`).
+
+### Measured (2026-11-06, this Mac)
+
+| Quantity | Value |
+| --- | --- |
+| `uv run pytest tools/tests` | 210 passed, coverage 100 % |
+| `describe` on Ursa (2026-11-06, `uv run --script`, Python 3.14.7) | 26 files, statistics for every variable, 2.1 MB JSON |
+| `tools/realistic_defaults.py` | 19 categories, 5 grids, 1511 lines of YAML |
+| realistic C48 generation, `--grid-factor 10` | 1.5 s, 20 files, 20 MB |
+| `scan-log` on the issue's log | 30 files, 12 KB JSON |
+| `uv run --script tools/extdata_catalog.py --help` (first run, environment build included) | 5.4 s |
+| analytic C48 regeneration (`--profile analytic`) | 3.9 s, content identical to the `develop` tooling |
+| `tools/ci.sh test ci` (cloud builder amd64 node, 2026-11-06) | 27 of 27 passed, 138 s total: `make_mock_data_realistic` 1.9 s, `gen_configs_realistic_refused` 0.3 s, `proto_cece_met_catchem` 53.5 s (unchanged). The first attempt did not start (expired Docker Hub login, `no credentials found for https://index.docker.io/v1/`); the second failed 14 tests because the realistic fixture wrote into `data/C48` and overwrote the analytic manifest and totals, fixed by `data/C48_realistic`; the third is the result here |

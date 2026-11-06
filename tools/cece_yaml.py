@@ -21,7 +21,7 @@ from tools import manifest as mf
 from tools.catchem_yaml import rooted, species_key, standard_name
 from tools.manifest import Strict
 
-StreamCadence = Literal["series", "monthly"]
+StreamCadence = Literal["series", "daily", "monthly"]
 TaxMode = Literal["limit", "extend"]
 
 
@@ -73,7 +73,7 @@ class Stream(Strict):
     name: str = Field(description="Stream name: the category.")
     file: str = Field(description="Absolute inventory path.")
     cadence: StreamCadence = Field(
-        description="series (hourly and static files) or monthly."
+        description="series (hourly and static files), daily (one file per day) or monthly."
     )
     tintalgo: Literal["linear"] = Field(
         description="Linear time interpolation between records."
@@ -137,6 +137,8 @@ def stream_timing(cadence: mf.Cadence) -> tuple[StreamCadence, TaxMode]:
     """CATChem cadence -> CECE stream cadence and axis mode (task-2 audit of CECE's cadences)."""
     if cadence == "hourly":
         return "series", "limit"
+    if cadence == "daily":
+        return "daily", "limit"
     if cadence == "monthly":
         return "monthly", "limit"
     if cadence == "static":

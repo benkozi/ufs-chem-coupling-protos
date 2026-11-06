@@ -1,6 +1,7 @@
 """Grids, the analytic land mask, the analytic inventories and their NetCDF files."""
 
 import math
+from datetime import UTC, datetime
 from pathlib import Path
 
 import netCDF4
@@ -419,3 +420,261 @@ def test_deflate_settings_reach_the_files(
     )
     with netCDF4.Dataset(manifest.categories["dust"].file) as ds:
         assert ds["sep"].filters()["zlib"] is False
+
+
+# --- the realistic profile's layouts (issue #17) -----------------------------------------------------------
+
+
+def with_layout(manifest: mf.Manifest, name: str, **overrides: object) -> mf.Manifest:
+    """The manifest with one category replaced by a copy carrying the given field overrides."""
+    category = manifest.categories[name].model_copy(update=overrides)
+    return manifest.model_copy(
+        update={"categories": {**manifest.categories, name: category}}
+    )
+
+
+def test_two_categories_share_one_file(manifest: mf.Manifest) -> None:
+    anthro = manifest.categories["anthro"]
+    anthro2 = anthro.model_copy(
+        update={
+            "variables": {f"{v}_elev": spec for v, spec in anthro.variables.items()}
+        }
+    )
+    m = manifest.model_copy(
+        update={"categories": {**manifest.categories, "anthro2": anthro2}}
+    )
+    land = inv.land_fraction(m.grids["inventory"], m.land_mask)
+    totals = inv.write_file(m, anthro.file, ["anthro", "anthro2"], land)
+    assert set(totals) == {"anthro", "anthro2"}
+    assert totals["anthro2"].files == [anthro.file]
+    with netCDF4.Dataset(anthro.file) as ds:
+        assert set(anthro.variables) <= set(ds.variables)
+        assert "SO2_elev" in ds.variables
+        assert ds.getncattr("category") == "anthro,anthro2"
+    everything = inv.generate_inventories(m)
+    assert (
+        everything.categories["anthro2"].variables["NO_elev"].records
+        == totals["anthro2"].variables["NO_elev"].records
+    )
+
+
+def test_daily_category_writes_one_file_per_day(tmp_path: Path) -> None:
+    manifest = small_manifest(tmp_path)
+    layout = mf.FileLayout(write_bounds_and_area=False, daily_record_hour=12.0)
+    m = with_layout(
+        manifest,
+        "fire",
+        cadence="daily",
+        file=tmp_path
+        / "ExtData"
+        / "QFED"
+        / "%y4"
+        / "%m2"
+        / "qfed2.emis_so2.006.%y4%m2%d2.nc4",
+        layout=layout,
+    )
+    totals = inv.generate_inventories(m).categories["fire"]
+    assert totals.files == [
+        tmp_path
+        / "ExtData"
+        / "QFED"
+        / "2021"
+        / "03"
+        / "qfed2.emis_so2.006.20210322.nc4",
+        tmp_path
+        / "ExtData"
+        / "QFED"
+        / "2021"
+        / "03"
+        / "qfed2.emis_so2.006.20210323.nc4",
+    ]
+    assert totals.times == [
+        datetime(2021, 3, 22, 12, tzinfo=UTC),
+        datetime(2021, 3, 23, 12, tzinfo=UTC),
+    ]
+    assert len(totals.variables["CO"].records) == 2
+    assert totals.file == m.categories["fire"].file
+    with netCDF4.Dataset(totals.files[1]) as ds:
+        assert ds["time"].units == "hours since 2021-03-23 00:00:00"
+        assert ds["time"][:].tolist() == [12.0]
+        assert "time_bnds" not in ds.variables
+        assert "area" not in ds.variables
+        assert "bounds" not in ds["lat"].ncattrs()
+        assert ds["CO"].shape == (1, 18, 36)
+    with pytest.raises(ValueError, match="needs the day"):
+        inv.time_axis("daily", m.clock, layout)
+
+
+def test_explicit_time_axes_are_written_verbatim(manifest: mf.Manifest) -> None:
+    htap = mf.ExplicitTimeAxis(
+        units="days since 2010-01-01 00:00:00", values=[15.5, 45.0, 74.5]
+    )
+    m = with_layout(manifest, "dms", layout=mf.FileLayout(time_axis=htap))
+    axis = inv.time_axis("monthly", m.clock, m.categories["dms"].layout)
+    assert axis.values == [15.5, 45.0, 74.5]
+    assert axis.units == htap.units
+    assert axis.bounds == [(0.75, 30.25), (30.25, 59.75), (59.75, 89.25)]
+    assert [s.month for s in axis.stamps] == [1, 2, 3]
+    assert axis.stamps[0] == datetime(2010, 1, 16, 12, tzinfo=UTC)
+    ocean = 1.0 - inv.land_fraction(m.grids["inventory"], m.land_mask)
+    totals = inv.write_category(m, "dms", ocean)
+    assert len(totals.variables["dms"].records) == 3
+    with netCDF4.Dataset(m.categories["dms"].file) as ds:
+        assert ds["time"][:].tolist() == [15.5, 45.0, 74.5]
+        assert ds["time"].units == htap.units
+        assert ds["time_bnds"][0].tolist() == [0.75, 30.25]
+    single = inv.explicit_time_axis(
+        "static",
+        mf.ExplicitTimeAxis(units="hours since 2021-03-22 06:00:00", values=[0.0]),
+    )
+    assert single.bounds == [(-0.5, 0.5)]
+    assert single.stamps == [manifest.clock.start]
+
+
+def test_layout_names_types_model_and_fill(tmp_path: Path) -> None:
+    manifest = small_manifest(tmp_path)
+    layout = mf.FileLayout(
+        model="NETCDF3_64BIT_OFFSET",
+        lon_name="longitude",
+        lat_name="latitude",
+        lev_name="level",
+        time_name="t",
+        dtype="float64",
+        fill_value=-1.0e20,
+        lev_before_time=True,
+        write_bounds_and_area=False,
+        time_axis=mf.ExplicitTimeAxis(
+            units="days since 2021-01-01 00:00:00", values=[15.5]
+        ),
+    )
+    m = with_layout(manifest, "gmi", layout=layout, level_order="top_down")
+    totals = inv.write_category(m, "gmi", None)
+    assert len(totals.variables["oh"].records) == 1
+    assert len(totals.variables["oh"].records[0]) == 5
+    with netCDF4.Dataset(m.categories["gmi"].file) as ds:
+        assert ds.data_model == "NETCDF3_64BIT_OFFSET"
+        assert ds["oh"].dimensions == ("level", "t", "latitude", "longitude")
+        assert ds["oh"].dtype == np.float64
+        assert ds["oh"].getncattr("_FillValue") == -1.0e20
+        assert ds["level"].positive == "down"
+        assert ds["t"][:].tolist() == [15.5]
+        assert set(ds.variables) == {
+            "longitude",
+            "latitude",
+            "level",
+            "t",
+            "oh",
+            "h2o2",
+            "no3",
+        }
+    # the swap puts file level 0 at the top (top_down): compare with the (time, lev) orientation
+    plain = with_layout(
+        manifest,
+        "gmi",
+        layout=mf.FileLayout(time_axis=layout.time_axis),
+        level_order="top_down",
+        file=manifest.categories["gmi"].file.with_name("gmi_plain.nc"),
+    )
+    inv.write_category(plain, "gmi", None)
+    with (
+        netCDF4.Dataset(m.categories["gmi"].file) as swapped,
+        netCDF4.Dataset(plain.categories["gmi"].file) as straight,
+    ):
+        assert np.allclose(swapped["oh"][:, 0], straight["oh"][0])
+
+
+def test_point_tables_are_copied_from_the_checked_in_defaults(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source_dir = tmp_path / "defaults" / "volcanic"
+    source_dir.mkdir(parents=True)
+    (source_dir / "so2_volcanic_emissions_Carns.20210322.rc").write_text(
+        "volcano::\n 1 2 3 4 5\n::\n"
+    )
+    (source_dir / "so2_volcanic_emissions_Carns.20210323.rc").write_text(
+        "volcano::\n::\n"
+    )
+    monkeypatch.setenv("PROTOS_EXTDATA_DEFAULTS_DIR", str(tmp_path / "defaults"))
+    get_settings.cache_clear()
+    manifest = small_manifest(tmp_path / "out")
+    volcano = mf.Category(
+        file=tmp_path
+        / "out"
+        / "ExtData"
+        / "volcanic"
+        / "so2_volcanic_emissions_Carns.%y4%m2%d2.rc",
+        cadence="daily",
+        regrid_method="none",
+        grid="inventory",
+        is_3d=False,
+        masked_by="none",
+        variables={},
+        layout=mf.FileLayout(format="point_table"),
+    )
+    m = manifest.model_copy(
+        update={"categories": {"dust": manifest.categories["dust"], "volcano": volcano}}
+    )
+    totals = inv.generate_inventories(m)
+    assert set(totals.categories) == {"dust"}
+    copied = (
+        tmp_path
+        / "out"
+        / "ExtData"
+        / "volcanic"
+        / "so2_volcanic_emissions_Carns.20210322.rc"
+    )
+    assert copied.read_text() == "volcano::\n 1 2 3 4 5\n::\n"
+    assert (copied.parent / "so2_volcanic_emissions_Carns.20210323.rc").exists()
+    (source_dir / "so2_volcanic_emissions_Carns.20210323.rc").unlink()
+    with pytest.raises(ValueError, match="not checked in"):
+        inv.copy_point_table(m, "volcano")
+
+
+def test_pole_centred_grid_bounds_are_clipped_and_areas_close() -> None:
+    g = mf.LatLonGrid(
+        dlon=10.0,
+        dlat=10.0,
+        lon_first=-180.0,
+        lat_first=-90.0,
+        nlon=36,
+        nlat=19,
+        pole_centred=True,
+    )
+    b = inv.lat_bounds(g)
+    assert b[0].tolist() == [-90.0, -85.0]
+    assert b[-1].tolist() == [85.0, 90.0]
+    assert math.isclose(
+        float(inv.cell_area(g, R).sum()), 4 * math.pi * R**2, rel_tol=1e-9
+    )
+
+
+def test_timeless_static_file_and_real_level_values(tmp_path: Path) -> None:
+    manifest = small_manifest(tmp_path)
+    timeless = with_layout(
+        manifest,
+        "dust",
+        layout=mf.FileLayout(time_dimension=False, write_bounds_and_area=False),
+    )
+    land = inv.land_fraction(timeless.grids["inventory"], timeless.land_mask)
+    totals = inv.write_category(timeless, "dust", land)
+    assert len(totals.variables["clayfrac"].records) == 1
+    with netCDF4.Dataset(timeless.categories["dust"].file) as ds:
+        assert "time" not in ds.dimensions
+        assert ds["clayfrac"].dimensions == ("lat", "lon")
+        assert ds["clayfrac"].shape == (18, 36)
+    pressures = [float(1000 - 200 * k) for k in range(5)]
+    levelled = with_layout(
+        manifest,
+        "gmi",
+        layout=mf.FileLayout(lev_values=pressures, lev_units="hPa"),
+        level_order="top_down",
+    )
+    inv.write_category(levelled, "gmi", None)
+    with netCDF4.Dataset(levelled.categories["gmi"].file) as ds:
+        assert ds["lev"][:].tolist() == pressures
+        assert ds["lev"].units == "hPa"
+        assert ds["lev"].positive == "down"
+        assert "long_name" not in ds["lev"].ncattrs()
+    wrong = with_layout(manifest, "gmi", layout=mf.FileLayout(lev_values=[1.0, 2.0]))
+    with pytest.raises(ValueError, match="lev_values has 2 entries"):
+        inv.write_category(wrong, "gmi", None)

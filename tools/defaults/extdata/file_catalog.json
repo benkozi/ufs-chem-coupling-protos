@@ -1,0 +1,601 @@
+{
+ "generated_utc": "2026-11-06T17:53:23+00:00",
+ "logs": [
+  "PET000.ESMF_LogFile.log"
+ ],
+ "line_shapes": [
+  "catchem_file_read"
+ ],
+ "files": [
+  {
+   "path": "CATChem_field_mapping.yml",
+   "format": "yaml",
+   "role": "config",
+   "sources": {
+    "load_field_config": 2
+   },
+   "categories": {},
+   "pets": [
+    0
+   ],
+   "read_count": 2,
+   "first_seen": "20261105 232505.145",
+   "point_count": null
+  },
+  {
+   "path": "CATChem_new_config.yml",
+   "format": "yaml",
+   "role": "config",
+   "sources": {
+    "catchem_nuopc_init": 1
+   },
+   "categories": {},
+   "pets": [
+    0
+   ],
+   "read_count": 1,
+   "first_seen": "20261105 232506.706",
+   "point_count": null
+  },
+  {
+   "path": "CATChem_species.yml",
+   "format": "yaml",
+   "role": "config",
+   "sources": {
+    "catchem_nuopc_init": 1
+   },
+   "categories": {},
+   "pets": [
+    0
+   ],
+   "read_count": 1,
+   "first_seen": "20261105 232506.706",
+   "point_count": null
+  },
+  {
+   "path": "CATChem_emission.yml",
+   "format": "yaml",
+   "role": "config",
+   "sources": {
+    "catchem_nuopc_init": 1
+   },
+   "categories": {},
+   "pets": [
+    0
+   ],
+   "read_count": 1,
+   "first_seen": "20261105 232506.706",
+   "point_count": null
+  },
+  {
+   "path": "ExtData/monochromatic/optics_SS.v3_3.nc",
+   "format": "netcdf",
+   "role": "optics",
+   "sources": {
+    "init_mie_data": 1
+   },
+   "categories": {},
+   "pets": [
+    0
+   ],
+   "read_count": 1,
+   "first_seen": "20261105 232506.706",
+   "point_count": null
+  },
+  {
+   "path": "ExtData/monochromatic/optics_DU.v15_3.nc",
+   "format": "netcdf",
+   "role": "optics",
+   "sources": {
+    "init_mie_data": 1
+   },
+   "categories": {},
+   "pets": [
+    0
+   ],
+   "read_count": 1,
+   "first_seen": "20261105 232506.706",
+   "point_count": null
+  },
+  {
+   "path": "ExtData/monochromatic/optics_BC.v1_3.nc",
+   "format": "netcdf",
+   "role": "optics",
+   "sources": {
+    "init_mie_data": 1
+   },
+   "categories": {},
+   "pets": [
+    0
+   ],
+   "read_count": 1,
+   "first_seen": "20261105 232506.706",
+   "point_count": null
+  },
+  {
+   "path": "ExtData/monochromatic/optics_OC.v1_3.nc",
+   "format": "netcdf",
+   "role": "optics",
+   "sources": {
+    "init_mie_data": 1
+   },
+   "categories": {},
+   "pets": [
+    0
+   ],
+   "read_count": 1,
+   "first_seen": "20261105 232506.706",
+   "point_count": null
+  },
+  {
+   "path": "ExtData/monochromatic/optics_NI.v2_5.nc",
+   "format": "netcdf",
+   "role": "optics",
+   "sources": {
+    "init_mie_data": 1
+   },
+   "categories": {},
+   "pets": [
+    0
+   ],
+   "read_count": 1,
+   "first_seen": "20261105 232506.706",
+   "point_count": null
+  },
+  {
+   "path": "ExtData/monochromatic/optics_SU.v1_3.nc",
+   "format": "netcdf",
+   "role": "optics",
+   "sources": {
+    "init_mie_data": 1
+   },
+   "categories": {},
+   "pets": [
+    0
+   ],
+   "read_count": 1,
+   "first_seen": "20261105 232506.706",
+   "point_count": null
+  },
+  {
+   "path": "ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_so2.aviation_lto.x3600_y1800_t12.2010.nc4",
+   "format": "netcdf",
+   "role": "inventory",
+   "sources": {
+    "AQMIO_ReadTimeCoord": 1,
+    "catchem_emis_detect_field_ranks": 1,
+    "catchem_regrid_field": 2
+   },
+   "categories": {
+    "so2_aviation_lto": [
+     "init",
+     "2021-03-22T06:00:00"
+    ]
+   },
+   "pets": [
+    0
+   ],
+   "read_count": 4,
+   "first_seen": "20261105 232506.822",
+   "point_count": null
+  },
+  {
+   "path": "ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_oc.aviation_lto.x3600_y1800_t12.2010.nc4",
+   "format": "netcdf",
+   "role": "inventory",
+   "sources": {
+    "AQMIO_ReadTimeCoord": 1,
+    "catchem_emis_detect_field_ranks": 1,
+    "catchem_regrid_field": 2
+   },
+   "categories": {
+    "oc_aviation_lto": [
+     "init",
+     "2021-03-22T06:00:00"
+    ]
+   },
+   "pets": [
+    0
+   ],
+   "read_count": 4,
+   "first_seen": "20261105 232506.884",
+   "point_count": null
+  },
+  {
+   "path": "ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_bc.aviation_lto.x3600_y1800_t12.2010.nc4",
+   "format": "netcdf",
+   "role": "inventory",
+   "sources": {
+    "AQMIO_ReadTimeCoord": 1,
+    "catchem_emis_detect_field_ranks": 1,
+    "catchem_regrid_field": 2
+   },
+   "categories": {
+    "bc_aviation_lto": [
+     "init",
+     "2021-03-22T06:00:00"
+    ]
+   },
+   "pets": [
+    0
+   ],
+   "read_count": 4,
+   "first_seen": "20261105 232506.950",
+   "point_count": null
+  },
+  {
+   "path": "ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_so2.aviation_cds.x3600_y1800_t12.2010.nc4",
+   "format": "netcdf",
+   "role": "inventory",
+   "sources": {
+    "AQMIO_ReadTimeCoord": 1,
+    "catchem_emis_detect_field_ranks": 1,
+    "catchem_regrid_field": 2
+   },
+   "categories": {
+    "so2_aviation_cds": [
+     "init",
+     "2021-03-22T06:00:00"
+    ]
+   },
+   "pets": [
+    0
+   ],
+   "read_count": 4,
+   "first_seen": "20261105 232507.028",
+   "point_count": null
+  },
+  {
+   "path": "ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_oc.aviation_cds.x3600_y1800_t12.2010.nc4",
+   "format": "netcdf",
+   "role": "inventory",
+   "sources": {
+    "AQMIO_ReadTimeCoord": 1,
+    "catchem_emis_detect_field_ranks": 1,
+    "catchem_regrid_field": 2
+   },
+   "categories": {
+    "oc_aviation_cds": [
+     "init",
+     "2021-03-22T06:00:00"
+    ]
+   },
+   "pets": [
+    0
+   ],
+   "read_count": 4,
+   "first_seen": "20261105 232507.167",
+   "point_count": null
+  },
+  {
+   "path": "ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_bc.aviation_cds.x3600_y1800_t12.2010.nc4",
+   "format": "netcdf",
+   "role": "inventory",
+   "sources": {
+    "AQMIO_ReadTimeCoord": 1,
+    "catchem_emis_detect_field_ranks": 1,
+    "catchem_regrid_field": 2
+   },
+   "categories": {
+    "bc_aviation_cds": [
+     "init",
+     "2021-03-22T06:00:00"
+    ]
+   },
+   "pets": [
+    0
+   ],
+   "read_count": 4,
+   "first_seen": "20261105 232507.270",
+   "point_count": null
+  },
+  {
+   "path": "ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_so2.aviation_crs.x3600_y1800_t12.2010.nc4",
+   "format": "netcdf",
+   "role": "inventory",
+   "sources": {
+    "AQMIO_ReadTimeCoord": 1,
+    "catchem_emis_detect_field_ranks": 1,
+    "catchem_regrid_field": 2
+   },
+   "categories": {
+    "so2_aviation_crs": [
+     "init",
+     "2021-03-22T06:00:00"
+    ]
+   },
+   "pets": [
+    0
+   ],
+   "read_count": 4,
+   "first_seen": "20261105 232507.361",
+   "point_count": null
+  },
+  {
+   "path": "ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_oc.aviation_crs.x3600_y1800_t12.2010.nc4",
+   "format": "netcdf",
+   "role": "inventory",
+   "sources": {
+    "AQMIO_ReadTimeCoord": 1,
+    "catchem_emis_detect_field_ranks": 1,
+    "catchem_regrid_field": 2
+   },
+   "categories": {
+    "oc_aviation_crs": [
+     "init",
+     "2021-03-22T06:00:00"
+    ]
+   },
+   "pets": [
+    0
+   ],
+   "read_count": 4,
+   "first_seen": "20261105 232507.454",
+   "point_count": null
+  },
+  {
+   "path": "ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_bc.aviation_crs.x3600_y1800_t12.2010.nc4",
+   "format": "netcdf",
+   "role": "inventory",
+   "sources": {
+    "AQMIO_ReadTimeCoord": 1,
+    "catchem_emis_detect_field_ranks": 1,
+    "catchem_regrid_field": 2
+   },
+   "categories": {
+    "bc_aviation_crs": [
+     "init",
+     "2021-03-22T06:00:00"
+    ]
+   },
+   "pets": [
+    0
+   ],
+   "read_count": 4,
+   "first_seen": "20261105 232507.551",
+   "point_count": null
+  },
+  {
+   "path": "ExtData/PIESA/L127/A2_ACCMIP_gmic_MERRA_oh_h2o2_no3.x144_y91_z127_t14.2021.nc",
+   "format": "netcdf",
+   "role": "inventory",
+   "sources": {
+    "AQMIO_ReadTimeCoord": 1,
+    "catchem_emis_detect_field_ranks": 1,
+    "catchem_regrid_field": 3
+   },
+   "categories": {
+    "gmi": [
+     "init",
+     "2021-03-22T06:00:00"
+    ]
+   },
+   "pets": [
+    0
+   ],
+   "read_count": 5,
+   "first_seen": "20261105 232507.627",
+   "point_count": null
+  },
+  {
+   "path": "ExtData/MERRA2/sfc/DMSclim_sfcconcentration.x360_y181_t12.Lana2011.nc4",
+   "format": "netcdf",
+   "role": "inventory",
+   "sources": {
+    "AQMIO_ReadTimeCoord": 1,
+    "catchem_emis_detect_field_ranks": 1,
+    "catchem_regrid_field": 2
+   },
+   "categories": {
+    "dms": [
+     "init",
+     "2021-03-22T06:00:00"
+    ]
+   },
+   "pets": [
+    0
+   ],
+   "read_count": 4,
+   "first_seen": "20261105 232507.697",
+   "point_count": null
+  },
+  {
+   "path": "ExtData/dust/FENGSHA_New_Method_NESDISv1.1_9km.nc",
+   "format": "netcdf",
+   "role": "inventory",
+   "sources": {
+    "AQMIO_ReadTimeCoord": 1,
+    "catchem_emis_detect_field_ranks": 1,
+    "catchem_regrid_field": 2
+   },
+   "categories": {
+    "fengsha": [
+     "init",
+     "2021-03-22T06:00:00"
+    ]
+   },
+   "pets": [
+    0
+   ],
+   "read_count": 4,
+   "first_seen": "20261105 232507.780",
+   "point_count": null
+  },
+  {
+   "path": "ExtData/CEDS/v2019/2021/CEDS.2019.emis.20210322.nc",
+   "format": "netcdf",
+   "role": "inventory",
+   "sources": {
+    "AQMIO_ReadTimeCoord": 3,
+    "catchem_emis_detect_field_ranks": 3,
+    "catchem_regrid_field": 10
+   },
+   "categories": {
+    "anthro1": [
+     "2021-03-22T06:00:00"
+    ],
+    "anthro2": [
+     "2021-03-22T06:00:00"
+    ],
+    "ship": [
+     "2021-03-22T06:00:00"
+    ]
+   },
+   "pets": [
+    0
+   ],
+   "read_count": 16,
+   "first_seen": "20261105 232515.343",
+   "point_count": null
+  },
+  {
+   "path": "ExtData/QFED/2021/03/qfed2.emis_so2.006.20210322.nc4",
+   "format": "netcdf",
+   "role": "inventory",
+   "sources": {
+    "AQMIO_ReadTimeCoord": 1,
+    "catchem_emis_detect_field_ranks": 1,
+    "catchem_regrid_field": 3
+   },
+   "categories": {
+    "fire": [
+     "2021-03-22T06:00:00",
+     "2021-03-23T00:00:00"
+    ]
+   },
+   "pets": [
+    0
+   ],
+   "read_count": 5,
+   "first_seen": "20261105 232518.047",
+   "point_count": null
+  },
+  {
+   "path": "ExtData/MEGAN_OFFLINE_BVOC/v2019-10/2021/MEGAN.OFFLINE.BIOVOC.2021.emis.20210322.nc",
+   "format": "netcdf",
+   "role": "inventory",
+   "sources": {
+    "AQMIO_ReadTimeCoord": 1,
+    "catchem_emis_detect_field_ranks": 2
+   },
+   "categories": {
+    "bio": [
+     "2021-03-22T06:00:00",
+     "2021-03-22T12:00:00"
+    ]
+   },
+   "pets": [
+    0
+   ],
+   "read_count": 3,
+   "first_seen": "20261105 232527.972",
+   "point_count": null
+  },
+  {
+   "path": "ExtData/volcanic/so2_volcanic_emissions_Carns.20210322.rc",
+   "format": "point_ascii",
+   "role": "point_table",
+   "sources": {
+    "catchem_emis_read_points": 1
+   },
+   "categories": {
+    "volcano": [
+     "2021-03-22T06:00:00"
+    ]
+   },
+   "pets": [
+    0
+   ],
+   "read_count": 1,
+   "first_seen": "20261105 232535.687",
+   "point_count": 97
+  },
+  {
+   "path": "ExtData/dust/FENGSHA_2022_NESDIS_inputs_10km_v3.2.nc",
+   "format": "netcdf",
+   "role": "inventory",
+   "sources": {
+    "catchem_emis_detect_field_ranks": 1,
+    "catchem_regrid_field": 4
+   },
+   "categories": {
+    "dust": [
+     "2021-03-22T06:00:00"
+    ]
+   },
+   "pets": [
+    0
+   ],
+   "read_count": 5,
+   "first_seen": "20261105 232535.789",
+   "point_count": null
+  },
+  {
+   "path": "ExtData/CEDS/v2019/2021/CEDS.2019.emis.20210323.nc",
+   "format": "netcdf",
+   "role": "inventory",
+   "sources": {
+    "AQMIO_ReadTimeCoord": 3,
+    "catchem_emis_detect_field_ranks": 3,
+    "catchem_regrid_field": 10
+   },
+   "categories": {
+    "anthro1": [
+     "2021-03-23T00:00:00"
+    ],
+    "anthro2": [
+     "2021-03-23T00:00:00"
+    ],
+    "ship": [
+     "2021-03-23T00:00:00"
+    ]
+   },
+   "pets": [
+    0
+   ],
+   "read_count": 16,
+   "first_seen": "20261105 232753.296",
+   "point_count": null
+  },
+  {
+   "path": "ExtData/QFED/2021/03/qfed2.emis_so2.006.20210323.nc4",
+   "format": "netcdf",
+   "role": "inventory",
+   "sources": {
+    "AQMIO_ReadTimeCoord": 1,
+    "catchem_emis_detect_field_ranks": 1,
+    "catchem_regrid_field": 1
+   },
+   "categories": {
+    "fire": [
+     "2021-03-23T00:00:00"
+    ]
+   },
+   "pets": [
+    0
+   ],
+   "read_count": 3,
+   "first_seen": "20261105 232754.210",
+   "point_count": null
+  },
+  {
+   "path": "ExtData/volcanic/so2_volcanic_emissions_Carns.20210323.rc",
+   "format": "point_ascii",
+   "role": "point_table",
+   "sources": {
+    "catchem_emis_read_points": 1
+   },
+   "categories": {
+    "volcano": [
+     "2021-03-23T00:00:00"
+    ]
+   },
+   "pets": [
+    0
+   ],
+   "read_count": 1,
+   "first_seen": "20261105 232754.381",
+   "point_count": 97
+  }
+ ]
+}

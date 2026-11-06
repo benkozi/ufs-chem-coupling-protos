@@ -227,3 +227,100 @@ def test_missing_defaults_file_is_a_usage_error(
             == 2
         )
     assert "nope.yaml" in caplog.text
+
+
+# --- the realistic profile and the grid factor (issue #17) -------------------------------------------------
+
+
+@pytest.mark.usefixtures("fake_fetch")
+def test_grid_factor_coarsens_every_grid(tmp_path: Path) -> None:
+    out = tmp_path / "C48"
+    assert (
+        cli.main(
+            [
+                "--resolution",
+                "C48",
+                "--out",
+                str(out),
+                "--grid-factor",
+                "2",
+                "--levels",
+                "3",
+            ]
+        )
+        == 0
+    )
+    manifest = mf.Manifest.from_yaml(out / "manifest.yaml")
+    assert manifest.grids["inventory"].nlon == 180
+    assert manifest.grids["gmi"].nlon == 72
+    assert "--grid-factor 2" in manifest.generator.command
+
+
+def test_grid_factor_must_be_positive(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level(logging.ERROR, logger=log.ROOT_NAME):
+        assert (
+            cli.main(
+                ["--resolution", "C48", "--out", str(tmp_path), "--grid-factor", "0"]
+            )
+            == 2
+        )
+    assert "at least 1" in caplog.text
+
+
+@pytest.mark.usefixtures("fake_fetch")
+def test_realistic_profile_takes_its_own_defaults_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    missing = tmp_path / "nope" / "manifest_realistic.yaml"
+    monkeypatch.setenv("PROTOS_REALISTIC_DEFAULTS", str(missing))
+    get_settings.cache_clear()
+    with caplog.at_level(logging.ERROR, logger=log.ROOT_NAME):
+        assert (
+            cli.main(
+                [
+                    "--resolution",
+                    "C48",
+                    "--out",
+                    str(tmp_path / "a"),
+                    "--profile",
+                    "realistic",
+                ]
+            )
+            == 2
+        )
+    assert "manifest_realistic.yaml" in caplog.text
+    realistic = tmp_path / "manifest_realistic.yaml"
+    doc = yaml.safe_load(get_settings().defaults_file.read_text())
+    doc["clock"]["duration_hours"] = 3
+    realistic.write_text(yaml.safe_dump(doc))
+    monkeypatch.setenv("PROTOS_REALISTIC_DEFAULTS", str(realistic))
+    get_settings.cache_clear()
+    out = tmp_path / "b"
+    assert (
+        cli.main(
+            ["--resolution", "C48", "--out", str(out), "--profile", "realistic", *FAST]
+        )
+        == 0
+    )
+    assert mf.Manifest.from_yaml(out / "manifest.yaml").clock.duration_hours == 3
+    # --defaults wins over the profile's file
+    out2 = tmp_path / "c"
+    assert (
+        cli.main(
+            [
+                "--resolution",
+                "C48",
+                "--out",
+                str(out2),
+                "--profile",
+                "realistic",
+                "--defaults",
+                str(get_settings().defaults_file),
+                *FAST,
+            ]
+        )
+        == 0
+    )
+    assert mf.Manifest.from_yaml(out2 / "manifest.yaml").clock.duration_hours == 24
