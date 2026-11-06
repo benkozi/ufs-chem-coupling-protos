@@ -179,6 +179,28 @@ class Settings(BaseSettings):
         description="Name of the record the generator writes under --out (what was generated from which manifest).",
     )
 
+    # the ExtData catalog and the realistic profile (issue #17). Relative paths are relative to the repository root.
+    extdata_defaults_dir: Path = Field(
+        default=Path("tools/defaults/extdata"),
+        description="Directory of the checked-in scrape outputs: the file catalog, the headers JSON and the volcanic tables.",
+    )
+    file_catalog_filename: str = Field(
+        default="file_catalog.json",
+        description="Name of the scan-log output (tools/extdata_catalog.py) under extdata_defaults_dir.",
+    )
+    extdata_headers_filename: str = Field(
+        default="extdata_headers.json",
+        description="Name of the describe output (the ExtDataHeaders document) under extdata_defaults_dir.",
+    )
+    volcanic_dirname: str = Field(
+        default="volcanic",
+        description="Subdirectory of extdata_defaults_dir holding the volcanic point tables copied from ExtData.",
+    )
+    realistic_defaults_file: Path = Field(
+        default=Path("tools/defaults/manifest_realistic.yaml"),
+        description="The realistic profile's parameter set (PROTOS_REALISTIC_DEFAULTS), written by tools/realistic_defaults.py; --defaults wins when given.",
+        validation_alias="PROTOS_REALISTIC_DEFAULTS",
+    )
     # tests
     fixture_dir: Path = Field(
         default=Path("data/fixtures/C48"),

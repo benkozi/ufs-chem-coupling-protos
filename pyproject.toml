@@ -125,6 +125,14 @@ ignore_names = [
     "source",
     # Read by the vulture-excluded schema modules (task 5).
     "standard_name_prefix",
+    # Issue #17: JSON-document fields (tools/extdata.py) and CATChem-config mirror fields (realistic_defaults.py)
+    # consumed through model_validate/model_dump, and netCDF attributes set on fixture variables in the tests.
+    "generated_utc",
+    "python",
+    "activate",
+    "scale_factor",
+    "add_offset",
+    "valid_range",
 ]
 # The generator's schema modules (task 5) mirror the keys of the emitted CATChem, CECE and dictionary files;
 # every field is consumed through model_dump, which vulture cannot see. The generator itself stays checked.

@@ -31,3 +31,36 @@ set_tests_properties(
     LABELS c96
     TIMEOUT 1800
 )
+
+# The realistic profile (issue #17): CATChem's production inventories mirrored from the ExtData catalog, coarsened
+# ten times for CI (0.1° -> 1°), under data/C48/ExtData. Its parameter set is written by tools/realistic_defaults.py
+# from the Ursa scrape, so the tests are registered only once that file is checked in.
+if(EXISTS ${PROJECT_SOURCE_DIR}/tools/defaults/manifest_realistic.yaml)
+  add_test(
+    NAME make_mock_data_realistic
+    COMMAND ${UV_EXECUTABLE} run --no-sync python -m tools.make_mock_data --resolution C48 --out data/C48
+            --profile realistic --grid-factor 10
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+  )
+  set_tests_properties(
+    make_mock_data_realistic
+    PROPERTIES
+      FIXTURES_SETUP mockdata_realistic
+      LABELS ci
+      TIMEOUT 900
+  )
+
+  add_test(
+    NAME make_mock_data_realistic_c96
+    COMMAND ${UV_EXECUTABLE} run --no-sync python -m tools.make_mock_data --resolution C96 --out data/C96
+            --profile realistic
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+  )
+  set_tests_properties(
+    make_mock_data_realistic_c96
+    PROPERTIES
+      FIXTURES_SETUP mockdata_realistic_c96
+      LABELS c96
+      TIMEOUT 3600
+  )
+endif()

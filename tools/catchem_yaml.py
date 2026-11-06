@@ -20,7 +20,7 @@ from tools import manifest as mf
 from tools.manifest import Strict
 from tools.settings import get_settings
 
-Frequency = Literal["hourly", "monthly", "static"]
+Frequency = Literal["hourly", "daily", "monthly", "static"]
 Source = Literal["file", "nuopc_import"]
 
 

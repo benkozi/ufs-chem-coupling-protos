@@ -10,7 +10,7 @@ parameter set is the YAML file `tools/defaults/manifest.yaml` (`ManifestDefaults
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Literal, Self
 
@@ -20,19 +20,27 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validato
 from tools.settings import get_settings
 
 ResolutionName = Literal["C48", "C96"]
-Cadence = Literal["hourly", "monthly", "static"]
-RegridMethod = Literal["conserve", "bilinear", "none"]
-CeceMapalgo = Literal["consd", "bilinear", "passthrough"]
+Cadence = Literal["hourly", "daily", "monthly", "static"]
+RegridMethod = Literal["conserve", "bilinear", "neareststod", "none"]
+CeceMapalgo = Literal["consd", "bilinear", "nn", "passthrough"]
 LevelOrder = Literal["bottom_up", "top_down"]
 MaskedBy = Literal["land", "ocean", "none"]
+FileFormat = Literal["netcdf", "point_table"]
+NetcdfModel = Literal[
+    "NETCDF4", "NETCDF4_CLASSIC", "NETCDF3_CLASSIC", "NETCDF3_64BIT_OFFSET"
+]
+DataType = Literal["float32", "float64"]
 
-# Code enumerations, not configuration: the categories the prototype knows and the CATChem -> CECE regrid mapping.
+# Code enumerations, not configuration: the analytic profile's categories (`tools/defaults/manifest.yaml`;
+# the realistic profile names CATChem's production categories) and the CATChem -> CECE regrid mapping.
 CATEGORY_NAMES: tuple[str, ...] = ("anthro", "fire", "gmi", "dms", "dust", "fengsha")
 REGRID_TO_MAPALGO: dict[str, CeceMapalgo] = {
     "conserve": "consd",
     "bilinear": "bilinear",
+    "neareststod": "nn",
     "none": "passthrough",
 }
+DATE_TOKENS = ("%y4", "%m2", "%d2")
 
 
 class Strict(BaseModel):
@@ -134,8 +142,12 @@ class LatLonGrid(Strict):
         description="Number of longitude cells; nlon * dlon must be 360.", gt=0
     )
     nlat: int = Field(
-        description="Number of latitude cells; the outer cell bounds must stay within ±90.",
+        description="Number of latitude cells; the outer cell bounds must stay within ±90 (pole_centred grids may overshoot by half a cell, which the bounds clip).",
         gt=0,
+    )
+    pole_centred: bool = Field(
+        default=False,
+        description="True for grids whose first and last centres sit on the poles (181 latitudes at 1°): the polar cells are half cells and their outer bounds are clipped to ±90.",
     )
 
     @model_validator(mode="after")
@@ -144,11 +156,34 @@ class LatLonGrid(Strict):
             raise ValueError(f"nlon * dlon must equal 360, got {self.nlon * self.dlon}")
         south = self.lat_first - self.dlat / 2
         north = self.lat_first + (self.nlat - 1) * self.dlat + self.dlat / 2
-        if south < -90.0 - 1e-9 or north > 90.0 + 1e-9:
+        slack = self.dlat / 2 if self.pole_centred else 0.0
+        if south < -90.0 - slack - 1e-9 or north > 90.0 + slack + 1e-9:
             raise ValueError(
                 f"latitude bounds must stay within ±90, got [{south}, {north}]"
             )
         return self
+
+    def coarsened(self, factor: int) -> LatLonGrid:
+        """The grid with `factor` times the spacing; `factor` must divide the cell counts (the interior count for a pole_centred grid)."""
+        if factor < 1:
+            raise ValueError("grid factor must be at least 1")
+        if factor == 1:
+            return self
+        interior = self.nlat - 1 if self.pole_centred else self.nlat
+        if self.nlon % factor or interior % factor:
+            raise ValueError(
+                f"grid factor {factor} does not divide the grid ({self.nlon} x {self.nlat}{', pole-centred' if self.pole_centred else ''})"
+            )
+        shift = 0.0 if self.pole_centred else (factor - 1) / 2
+        return LatLonGrid(
+            dlon=self.dlon * factor,
+            dlat=self.dlat * factor,
+            lon_first=self.lon_first + shift * self.dlon,
+            lat_first=self.lat_first + shift * self.dlat,
+            nlon=self.nlon // factor,
+            nlat=interior // factor + (1 if self.pole_centred else 0),
+            pole_centred=self.pole_centred,
+        )
 
 
 class Continent(Strict):
@@ -255,17 +290,77 @@ class Variable(Strict):
     )
 
 
+class ExplicitTimeAxis(Strict):
+    """A file's own time coordinate, written verbatim instead of the analytic axis (monthly and static files of the realistic profile)."""
+
+    units: str = Field(
+        description="CF time units string of the file, e.g. 'days since 2010-01-01 00:00:00'."
+    )
+    calendar: str = Field(default="standard", description="CF calendar attribute.")
+    values: list[float] = Field(
+        description="Every record time in `units`, in file order.", min_length=1
+    )
+
+
+class FileLayout(Strict):
+    """How a category's file is laid out on disk when it mirrors a real inventory (the realistic profile); absent for the analytic profile's CF layout."""
+
+    format: FileFormat = Field(
+        default="netcdf",
+        description="netcdf for a gridded inventory; point_table for a volcanic .rc table copied verbatim (no variables, nothing generated).",
+    )
+    model: NetcdfModel = Field(
+        default="NETCDF4",
+        description="NetCDF data model to write (netCDF4 format names).",
+    )
+    lon_name: str = Field(
+        default="lon", description="Longitude coordinate variable name."
+    )
+    lat_name: str = Field(
+        default="lat", description="Latitude coordinate variable name."
+    )
+    lev_name: str = Field(
+        default="lev", description="Level coordinate variable name (3-D files)."
+    )
+    time_name: str = Field(default="time", description="Time coordinate variable name.")
+    dtype: DataType = Field(default="float32", description="Data variable type.")
+    fill_value: float | None = Field(
+        default=None,
+        description="_FillValue written on every data variable, or null for none.",
+    )
+    lev_before_time: bool = Field(
+        default=False,
+        description="True when the file orders dimensions (lev, time, lat, lon) instead of (time, lev, lat, lon).",
+    )
+    write_bounds_and_area: bool = Field(
+        default=True,
+        description="Write lon/lat bounds, time_bnds and the area variable (the analytic layout); the real inventories carry none.",
+    )
+    daily_record_hour: float = Field(
+        default=12.0,
+        description="Hour of the single record of a daily file (hours since that day's 00:00 UTC).",
+        ge=0,
+        lt=24,
+    )
+    time_axis: ExplicitTimeAxis | None = Field(
+        default=None,
+        description="The file's own time coordinate for monthly and static files, or null for the analytic axis; not allowed for hourly and daily files.",
+    )
+
+
 class Category(Strict):
-    file: Path = Field(description="NetCDF file holding this category's variables.")
+    file: Path = Field(
+        description="NetCDF file holding this category's variables; a daily category's path carries the %y4%m2%d2 tokens of its day."
+    )
     cadence: Cadence = Field(
-        description="CATChem's `frequency` for the category: hourly, monthly or static."
+        description="CATChem's `frequency` for the category: hourly, daily, monthly or static."
     )
     regrid_method: RegridMethod = Field(
         description="CATChem-style regrid method the prototype assigns to the category."
     )
     cece_mapalgo: CeceMapalgo | None = Field(
         default=None,
-        description="CECE stream mapalgo; derived from regrid_method when omitted (conserve→consd, bilinear→bilinear, none→passthrough).",
+        description="CECE stream mapalgo; derived from regrid_method when omitted (conserve→consd, bilinear→bilinear, neareststod→nn, none→passthrough).",
     )
     grid: str = Field(
         description="Name (in `grids`) of the regular lat-lon grid the file is written on."
@@ -281,7 +376,11 @@ class Category(Strict):
         description="Multiply by the land fraction, the ocean fraction, or nothing."
     )
     variables: dict[str, Variable] = Field(
-        description="Variables by their CATChem file variable name."
+        description="Variables by their CATChem file variable name (empty only for a point_table layout)."
+    )
+    layout: FileLayout | None = Field(
+        default=None,
+        description="Real-inventory file layout (the realistic profile), or null for the analytic CF layout.",
     )
 
     @model_validator(mode="after")
@@ -294,6 +393,56 @@ class Category(Strict):
                 f"cece_mapalgo {self.cece_mapalgo!r} does not match regrid_method {self.regrid_method!r} (expected {expected!r})"
             )
         return self
+
+    @model_validator(mode="after")
+    def _layout_is_consistent(self) -> Category:
+        layout = self.layout
+        if layout is not None and layout.format == "point_table":
+            if self.variables:
+                raise ValueError("a point_table category has no variables")
+            if self.is_3d:
+                raise ValueError("a point_table category is not 3-D")
+        elif not self.variables:
+            raise ValueError("a gridded category needs at least one variable")
+        if (
+            layout is not None
+            and layout.time_axis is not None
+            and self.cadence in ("hourly", "daily")
+        ):
+            raise ValueError(
+                f"an explicit time_axis is not allowed for a {self.cadence} category"
+            )
+        has_tokens = any(token in str(self.file) for token in DATE_TOKENS)
+        if (self.cadence == "daily") != has_tokens:
+            raise ValueError(
+                "a daily category's file carries %y4%m2%d2 date tokens, other cadences do not"
+            )
+        return self
+
+    @property
+    def is_point_table(self) -> bool:
+        return self.layout is not None and self.layout.format == "point_table"
+
+    def files_for(self, clock: Clock) -> list[Path]:
+        """The files of the category for the clock: one per calendar day the run touches for daily, else the one file."""
+        if self.cadence != "daily":
+            return [self.file]
+        first = clock.start.astimezone(UTC).date()
+        last = (clock.end - timedelta(microseconds=1)).astimezone(UTC).date()
+        days = [first + timedelta(days=i) for i in range((last - first).days + 1)]
+        return [expand_date_tokens(self.file, day) for day in days]
+
+
+def expand_date_tokens(path: Path, day: date) -> Path:
+    """`%y4`, `%m2`, `%d2` (the CATChem, ExtData and HEMCO spelling) replaced by the day's year, month and day."""
+    text = str(path)
+    for token, value in zip(
+        DATE_TOKENS,
+        (f"{day.year:04d}", f"{day.month:02d}", f"{day.day:02d}"),
+        strict=True,
+    ):
+        text = text.replace(token, value)
+    return Path(text)
 
 
 class Tracer(Strict):
@@ -451,11 +600,6 @@ class Parameters(Strict):
 
     @model_validator(mode="after")
     def _references_resolve(self) -> Self:
-        for name in self.categories:
-            if name not in CATEGORY_NAMES:
-                raise ValueError(
-                    f"unknown category {name!r}; expected one of {', '.join(CATEGORY_NAMES)}"
-                )
         for name, category in self.categories.items():
             if category.grid not in self.grids:
                 raise ValueError(
@@ -465,7 +609,35 @@ class Parameters(Strict):
             raise ValueError(
                 f"land_mask references unknown grid {self.land_mask.grid!r}"
             )
+        by_file: dict[Path, tuple[str, Category]] = {}
+        for name, category in self.categories.items():
+            first = by_file.setdefault(category.file, (name, category))
+            if first[1] is category:
+                continue
+            other = first[1]
+            agree = (
+                other.grid == category.grid
+                and other.cadence == category.cadence
+                and other.is_3d == category.is_3d
+                and other.level_order == category.level_order
+                and other.layout == category.layout
+            )
+            if not agree:
+                raise ValueError(
+                    f"categories {first[0]!r} and {name!r} share the file {category.file} but disagree on grid, cadence, levels or layout"
+                )
+            if set(other.variables) & set(category.variables):
+                raise ValueError(
+                    f"categories {first[0]!r} and {name!r} share the file {category.file} and a variable name"
+                )
         return self
+
+    def categories_by_file(self) -> dict[Path, list[str]]:
+        """Category names grouped by the file they are written to, in manifest order."""
+        groups: dict[Path, list[str]] = {}
+        for name, category in self.categories.items():
+            groups.setdefault(category.file, []).append(name)
+        return groups
 
     @property
     def inventories_dir(self) -> Path:
@@ -520,8 +692,9 @@ def default_manifest(
     inventory_resolution_deg: float | None = None,
     source_url: str | None = None,
     generated_at: datetime | None = None,
+    grid_factor: int = 1,
 ) -> Manifest:
-    """The defaults file (settings `defaults_file` unless given) with the overrides applied and every path rooted under `out_dir`."""
+    """The defaults file (settings `defaults_file` unless given) with the overrides applied, every grid coarsened by `grid_factor`, and every path rooted under `out_dir`."""
     settings = get_settings()
     defaults = ManifestDefaults.from_yaml(defaults_file or settings.defaults_file)
     overrides = {
@@ -537,6 +710,7 @@ def default_manifest(
     grids = dict(defaults.grids)
     if inventory_resolution_deg is not None:
         grids["inventory"] = inventory_grid(inventory_resolution_deg)
+    grids = {name: grid.coarsened(grid_factor) for name, grid in grids.items()}
     fix_dir = out_dir / settings.fix_dirname
     return Manifest(
         generator=GeneratorInfo(

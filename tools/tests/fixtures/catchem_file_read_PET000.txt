@@ -1,0 +1,165 @@
+20261105 232436.578 INFO             PET000 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+20261105 232436.578 INFO             PET000 !!! THE ESMF_LOG IS SET TO OUTPUT ALL LOG MESSAGES !!!
+20261105 232436.578 INFO             PET000 !!!     THIS MAY CAUSE SLOWDOWN IN PERFORMANCE     !!!
+20261105 232436.578 INFO             PET000 !!! FOR PRODUCTION RUNS, USE:                      !!!
+20261105 232436.578 INFO             PET000 !!!                   ESMF_LOGKIND_Multi_On_Error  !!!
+20261105 232436.578 INFO             PET000 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+20261105 232436.578 INFO             PET000 Running with ESMF Version   : 8.8.0
+20261105 232436.578 INFO             PET000 ESMF library build date/time: "Jul 12 2025" "01:47:16"
+20261105 232505.145 INFO             PET000 CATCHEM_FILE_READ: format=yaml source=load_field_config path=CATChem_field_mapping.yml
+20261105 232505.148 INFO             PET000 CATCHEM_FILE_READ: format=yaml source=load_field_config path=CATChem_field_mapping.yml
+20261105 232506.706 INFO             PET000 CATCHEM_FILE_READ: format=yaml source=catchem_nuopc_init path=CATChem_new_config.yml
+20261105 232506.706 INFO             PET000 CATCHEM_FILE_READ: format=yaml source=catchem_nuopc_init path=./CATChem_species.yml
+20261105 232506.706 INFO             PET000 CATCHEM_FILE_READ: format=yaml source=catchem_nuopc_init path=./CATChem_emission.yml
+20261105 232506.706 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=init_mie_data path=./ExtData/monochromatic/optics_SS.v3_3.nc
+20261105 232506.706 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=init_mie_data path=./ExtData/monochromatic/optics_DU.v15_3.nc
+20261105 232506.706 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=init_mie_data path=./ExtData/monochromatic/optics_BC.v1_3.nc
+20261105 232506.706 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=init_mie_data path=./ExtData/monochromatic/optics_OC.v1_3.nc
+20261105 232506.706 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=init_mie_data path=./ExtData/monochromatic/optics_NI.v2_5.nc
+20261105 232506.706 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=init_mie_data path=./ExtData/monochromatic/optics_SU.v1_3.nc
+20261105 232506.720 INFO             PET000 catchem_emis_populate_category: Successfully populated category anthro1
+20261105 232506.732 INFO             PET000 catchem_emis_populate_category: Successfully populated category anthro2
+20261105 232506.744 INFO             PET000 catchem_emis_populate_category: Successfully populated category ship
+20261105 232506.757 INFO             PET000 catchem_emis_populate_category: Successfully populated category fire
+20261105 232506.769 INFO             PET000 catchem_emis_populate_category: Successfully populated category so2_aviation_lto
+20261105 232506.822 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=AQMIO_ReadTimeCoord path=ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_so2.aviation_lto.x3600_y1800_t12.2010.nc4
+20261105 232506.834 INFO             PET000 catchem_emis_populate_category: Successfully populated category oc_aviation_lto
+20261105 232506.884 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=AQMIO_ReadTimeCoord path=ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_oc.aviation_lto.x3600_y1800_t12.2010.nc4
+20261105 232506.897 INFO             PET000 catchem_emis_populate_category: Successfully populated category bc_aviation_lto
+20261105 232506.950 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=AQMIO_ReadTimeCoord path=ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_bc.aviation_lto.x3600_y1800_t12.2010.nc4
+20261105 232506.962 INFO             PET000 catchem_emis_populate_category: Successfully populated category so2_aviation_cds
+20261105 232507.028 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=AQMIO_ReadTimeCoord path=ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_so2.aviation_cds.x3600_y1800_t12.2010.nc4
+20261105 232507.044 INFO             PET000 catchem_emis_populate_category: Successfully populated category oc_aviation_cds
+20261105 232507.167 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=AQMIO_ReadTimeCoord path=ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_oc.aviation_cds.x3600_y1800_t12.2010.nc4
+20261105 232507.180 INFO             PET000 catchem_emis_populate_category: Successfully populated category bc_aviation_cds
+20261105 232507.270 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=AQMIO_ReadTimeCoord path=ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_bc.aviation_cds.x3600_y1800_t12.2010.nc4
+20261105 232507.292 INFO             PET000 catchem_emis_populate_category: Successfully populated category so2_aviation_crs
+20261105 232507.361 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=AQMIO_ReadTimeCoord path=ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_so2.aviation_crs.x3600_y1800_t12.2010.nc4
+20261105 232507.376 INFO             PET000 catchem_emis_populate_category: Successfully populated category oc_aviation_crs
+20261105 232507.454 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=AQMIO_ReadTimeCoord path=ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_oc.aviation_crs.x3600_y1800_t12.2010.nc4
+20261105 232507.486 INFO             PET000 catchem_emis_populate_category: Successfully populated category bc_aviation_crs
+20261105 232507.551 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=AQMIO_ReadTimeCoord path=ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_bc.aviation_crs.x3600_y1800_t12.2010.nc4
+20261105 232507.582 INFO             PET000 catchem_emis_populate_category: Successfully populated category bio
+20261105 232507.594 INFO             PET000 catchem_emis_populate_category: Successfully populated category gmi
+20261105 232507.627 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=AQMIO_ReadTimeCoord path=ExtData/PIESA/L127/A2_ACCMIP_gmic_MERRA_oh_h2o2_no3.x144_y91_z127_t14.2021.nc
+20261105 232507.642 INFO             PET000 catchem_emis_populate_category: Successfully populated category dms
+20261105 232507.697 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=AQMIO_ReadTimeCoord path=ExtData/MERRA2/sfc/DMSclim_sfcconcentration.x360_y181_t12.Lana2011.nc4
+20261105 232507.711 INFO             PET000 catchem_emis_populate_category: Successfully populated category volcano
+20261105 232507.724 INFO             PET000 catchem_emis_populate_category: Successfully populated category dust
+20261105 232507.738 INFO             PET000 catchem_emis_populate_category: Successfully populated category fengsha
+20261105 232507.780 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=AQMIO_ReadTimeCoord path=ExtData/dust/FENGSHA_New_Method_NESDISv1.1_9km.nc
+20261105 232515.338 INFO             PET000 catchem_emis_update: reading emission for anthro1 @ 2021-03-22T06:00:00
+20261105 232515.343 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=AQMIO_ReadTimeCoord path=ExtData/CEDS/v2019/2021/CEDS.2019.emis.20210322.nc
+20261105 232515.346 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_emis_detect_field_ranks path=ExtData/CEDS/v2019/2021/CEDS.2019.emis.20210322.nc
+20261105 232515.351 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/CEDS/v2019/2021/CEDS.2019.emis.20210322.nc
+20261105 232517.547 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/CEDS/v2019/2021/CEDS.2019.emis.20210322.nc
+20261105 232517.591 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/CEDS/v2019/2021/CEDS.2019.emis.20210322.nc
+20261105 232517.618 INFO             PET000 catchem_emis_update: reading emission for anthro2 @ 2021-03-22T06:00:00
+20261105 232517.636 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=AQMIO_ReadTimeCoord path=ExtData/CEDS/v2019/2021/CEDS.2019.emis.20210322.nc
+20261105 232517.662 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_emis_detect_field_ranks path=ExtData/CEDS/v2019/2021/CEDS.2019.emis.20210322.nc
+20261105 232517.688 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/CEDS/v2019/2021/CEDS.2019.emis.20210322.nc
+20261105 232517.734 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/CEDS/v2019/2021/CEDS.2019.emis.20210322.nc
+20261105 232517.774 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/CEDS/v2019/2021/CEDS.2019.emis.20210322.nc
+20261105 232517.806 INFO             PET000 catchem_emis_update: reading emission for ship @ 2021-03-22T06:00:00
+20261105 232517.822 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=AQMIO_ReadTimeCoord path=ExtData/CEDS/v2019/2021/CEDS.2019.emis.20210322.nc
+20261105 232517.856 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_emis_detect_field_ranks path=ExtData/CEDS/v2019/2021/CEDS.2019.emis.20210322.nc
+20261105 232517.882 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/CEDS/v2019/2021/CEDS.2019.emis.20210322.nc
+20261105 232517.917 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/CEDS/v2019/2021/CEDS.2019.emis.20210322.nc
+20261105 232517.954 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/CEDS/v2019/2021/CEDS.2019.emis.20210322.nc
+20261105 232517.996 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/CEDS/v2019/2021/CEDS.2019.emis.20210322.nc
+20261105 232518.035 INFO             PET000 catchem_emis_update: reading emission for fire @ 2021-03-22T06:00:00
+20261105 232518.047 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=AQMIO_ReadTimeCoord path=ExtData/QFED/2021/03/qfed2.emis_so2.006.20210322.nc4
+20261105 232518.058 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_emis_detect_field_ranks path=ExtData/QFED/2021/03/qfed2.emis_so2.006.20210322.nc4
+20261105 232518.077 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/QFED/2021/03/qfed2.emis_so2.006.20210322.nc4
+20261105 232518.135 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/QFED/2021/03/qfed2.emis_so2.006.20210322.nc4
+20261105 232518.181 INFO             PET000 catchem_emis_update: reading emission for so2_aviation_lto @ 2021-03-22T06:00:00
+20261105 232518.193 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_emis_detect_field_ranks path=ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_so2.aviation_lto.x3600_y1800_t12.2010.nc4
+20261105 232518.203 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_so2.aviation_lto.x3600_y1800_t12.2010.nc4
+20261105 232518.562 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_so2.aviation_lto.x3600_y1800_t12.2010.nc4
+20261105 232518.918 INFO             PET000 catchem_emis_update: reading emission for oc_aviation_lto @ 2021-03-22T06:00:00
+20261105 232518.925 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_emis_detect_field_ranks path=ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_oc.aviation_lto.x3600_y1800_t12.2010.nc4
+20261105 232518.935 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_oc.aviation_lto.x3600_y1800_t12.2010.nc4
+20261105 232519.294 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_oc.aviation_lto.x3600_y1800_t12.2010.nc4
+20261105 232519.648 INFO             PET000 catchem_emis_update: reading emission for bc_aviation_lto @ 2021-03-22T06:00:00
+20261105 232519.654 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_emis_detect_field_ranks path=ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_bc.aviation_lto.x3600_y1800_t12.2010.nc4
+20261105 232519.663 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_bc.aviation_lto.x3600_y1800_t12.2010.nc4
+20261105 232520.024 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_bc.aviation_lto.x3600_y1800_t12.2010.nc4
+20261105 232520.387 INFO             PET000 catchem_emis_update: reading emission for so2_aviation_cds @ 2021-03-22T06:00:00
+20261105 232520.389 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_emis_detect_field_ranks path=ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_so2.aviation_cds.x3600_y1800_t12.2010.nc4
+20261105 232520.395 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_so2.aviation_cds.x3600_y1800_t12.2010.nc4
+20261105 232520.917 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_so2.aviation_cds.x3600_y1800_t12.2010.nc4
+20261105 232521.314 INFO             PET000 catchem_emis_update: reading emission for oc_aviation_cds @ 2021-03-22T06:00:00
+20261105 232521.322 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_emis_detect_field_ranks path=ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_oc.aviation_cds.x3600_y1800_t12.2010.nc4
+20261105 232521.328 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_oc.aviation_cds.x3600_y1800_t12.2010.nc4
+20261105 232521.854 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_oc.aviation_cds.x3600_y1800_t12.2010.nc4
+20261105 232522.241 INFO             PET000 catchem_emis_update: reading emission for bc_aviation_cds @ 2021-03-22T06:00:00
+20261105 232522.244 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_emis_detect_field_ranks path=ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_bc.aviation_cds.x3600_y1800_t12.2010.nc4
+20261105 232522.246 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_bc.aviation_cds.x3600_y1800_t12.2010.nc4
+20261105 232522.686 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_bc.aviation_cds.x3600_y1800_t12.2010.nc4
+20261105 232523.076 INFO             PET000 catchem_emis_update: reading emission for so2_aviation_crs @ 2021-03-22T06:00:00
+20261105 232523.080 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_emis_detect_field_ranks path=ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_so2.aviation_crs.x3600_y1800_t12.2010.nc4
+20261105 232523.086 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_so2.aviation_crs.x3600_y1800_t12.2010.nc4
+20261105 232523.908 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_so2.aviation_crs.x3600_y1800_t12.2010.nc4
+20261105 232524.663 INFO             PET000 catchem_emis_update: reading emission for oc_aviation_crs @ 2021-03-22T06:00:00
+20261105 232524.671 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_emis_detect_field_ranks path=ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_oc.aviation_crs.x3600_y1800_t12.2010.nc4
+20261105 232524.684 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_oc.aviation_crs.x3600_y1800_t12.2010.nc4
+20261105 232525.642 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_oc.aviation_crs.x3600_y1800_t12.2010.nc4
+20261105 232526.391 INFO             PET000 catchem_emis_update: reading emission for bc_aviation_crs @ 2021-03-22T06:00:00
+20261105 232526.402 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_emis_detect_field_ranks path=ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_bc.aviation_crs.x3600_y1800_t12.2010.nc4
+20261105 232526.420 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_bc.aviation_crs.x3600_y1800_t12.2010.nc4
+20261105 232527.200 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_bc.aviation_crs.x3600_y1800_t12.2010.nc4
+20261105 232527.964 INFO             PET000 catchem_emis_update: reading emission for bio @ 2021-03-22T06:00:00
+20261105 232527.972 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=AQMIO_ReadTimeCoord path=ExtData/MEGAN_OFFLINE_BVOC/v2019-10/2021/MEGAN.OFFLINE.BIOVOC.2021.emis.20210322.nc
+20261105 232527.977 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_emis_detect_field_ranks path=ExtData/MEGAN_OFFLINE_BVOC/v2019-10/2021/MEGAN.OFFLINE.BIOVOC.2021.emis.20210322.nc
+20261105 232527.978 INFO             PET000 catchem_emis_update: reading emission for gmi @ 2021-03-22T06:00:00
+20261105 232527.988 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_emis_detect_field_ranks path=ExtData/PIESA/L127/A2_ACCMIP_gmic_MERRA_oh_h2o2_no3.x144_y91_z127_t14.2021.nc
+20261105 232527.992 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/PIESA/L127/A2_ACCMIP_gmic_MERRA_oh_h2o2_no3.x144_y91_z127_t14.2021.nc
+20261105 232530.566 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/PIESA/L127/A2_ACCMIP_gmic_MERRA_oh_h2o2_no3.x144_y91_z127_t14.2021.nc
+20261105 232533.096 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/PIESA/L127/A2_ACCMIP_gmic_MERRA_oh_h2o2_no3.x144_y91_z127_t14.2021.nc
+20261105 232535.586 INFO             PET000 catchem_emis_update: reading emission for dms @ 2021-03-22T06:00:00
+20261105 232535.598 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_emis_detect_field_ranks path=ExtData/MERRA2/sfc/DMSclim_sfcconcentration.x360_y181_t12.Lana2011.nc4
+20261105 232535.606 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/MERRA2/sfc/DMSclim_sfcconcentration.x360_y181_t12.Lana2011.nc4
+20261105 232535.665 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/MERRA2/sfc/DMSclim_sfcconcentration.x360_y181_t12.Lana2011.nc4
+20261105 232535.669 INFO             PET000 catchem_emis_update: reading emission for volcano @ 2021-03-22T06:00:00
+20261105 232535.687 INFO             PET000 CATCHEM_FILE_READ: format=point_ascii source=catchem_emis_read_points path=ExtData/volcanic/so2_volcanic_emissions_Carns.20210322.rc
+20261105 232535.697 INFO             PET000 catchem_emis_read_points: read 97 point sources from ExtData/volcanic/so2_volcanic_emissions_Carns.20210322.rc
+20261105 232535.697 INFO             PET000 catchem_emis_update: reading emission for dust @ 2021-03-22T06:00:00
+20261105 232535.789 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_emis_detect_field_ranks path=ExtData/dust/FENGSHA_2022_NESDIS_inputs_10km_v3.2.nc
+20261105 232535.811 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/dust/FENGSHA_2022_NESDIS_inputs_10km_v3.2.nc
+20261105 232536.071 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/dust/FENGSHA_2022_NESDIS_inputs_10km_v3.2.nc
+20261105 232536.233 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/dust/FENGSHA_2022_NESDIS_inputs_10km_v3.2.nc
+20261105 232536.319 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/dust/FENGSHA_2022_NESDIS_inputs_10km_v3.2.nc
+20261105 232536.411 INFO             PET000 catchem_emis_update: reading emission for fengsha @ 2021-03-22T06:00:00
+20261105 232536.419 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_emis_detect_field_ranks path=ExtData/dust/FENGSHA_New_Method_NESDISv1.1_9km.nc
+20261105 232536.432 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/dust/FENGSHA_New_Method_NESDISv1.1_9km.nc
+20261105 232536.949 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/dust/FENGSHA_New_Method_NESDISv1.1_9km.nc
+20261105 232623.080 INFO             PET000 catchem_emis_update: reading emission for bio @ 2021-03-22T12:00:00
+20261105 232623.085 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_emis_detect_field_ranks path=ExtData/MEGAN_OFFLINE_BVOC/v2019-10/2021/MEGAN.OFFLINE.BIOVOC.2021.emis.20210322.nc
+20261105 232753.289 INFO             PET000 catchem_emis_update: reading emission for anthro1 @ 2021-03-23T00:00:00
+20261105 232753.296 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=AQMIO_ReadTimeCoord path=ExtData/CEDS/v2019/2021/CEDS.2019.emis.20210323.nc
+20261105 232753.299 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_emis_detect_field_ranks path=ExtData/CEDS/v2019/2021/CEDS.2019.emis.20210323.nc
+20261105 232753.303 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/CEDS/v2019/2021/CEDS.2019.emis.20210323.nc
+20261105 232753.552 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/CEDS/v2019/2021/CEDS.2019.emis.20210323.nc
+20261105 232753.713 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/CEDS/v2019/2021/CEDS.2019.emis.20210323.nc
+20261105 232753.735 INFO             PET000 catchem_emis_update: reading emission for anthro2 @ 2021-03-23T00:00:00
+20261105 232753.746 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=AQMIO_ReadTimeCoord path=ExtData/CEDS/v2019/2021/CEDS.2019.emis.20210323.nc
+20261105 232753.773 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_emis_detect_field_ranks path=ExtData/CEDS/v2019/2021/CEDS.2019.emis.20210323.nc
+20261105 232753.798 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/CEDS/v2019/2021/CEDS.2019.emis.20210323.nc
+20261105 232753.840 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/CEDS/v2019/2021/CEDS.2019.emis.20210323.nc
+20261105 232753.877 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/CEDS/v2019/2021/CEDS.2019.emis.20210323.nc
+20261105 232753.908 INFO             PET000 catchem_emis_update: reading emission for ship @ 2021-03-23T00:00:00
+20261105 232753.919 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=AQMIO_ReadTimeCoord path=ExtData/CEDS/v2019/2021/CEDS.2019.emis.20210323.nc
+20261105 232753.941 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_emis_detect_field_ranks path=ExtData/CEDS/v2019/2021/CEDS.2019.emis.20210323.nc
+20261105 232753.966 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/CEDS/v2019/2021/CEDS.2019.emis.20210323.nc
+20261105 232754.017 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/CEDS/v2019/2021/CEDS.2019.emis.20210323.nc
+20261105 232754.060 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/CEDS/v2019/2021/CEDS.2019.emis.20210323.nc
+20261105 232754.103 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/CEDS/v2019/2021/CEDS.2019.emis.20210323.nc
+20261105 232754.133 INFO             PET000 catchem_emis_update: reading emission for fire @ 2021-03-23T00:00:00
+20261105 232754.210 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=AQMIO_ReadTimeCoord path=ExtData/QFED/2021/03/qfed2.emis_so2.006.20210323.nc4
+20261105 232754.226 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_emis_detect_field_ranks path=ExtData/QFED/2021/03/qfed2.emis_so2.006.20210323.nc4
+20261105 232754.240 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/QFED/2021/03/qfed2.emis_so2.006.20210322.nc4
+20261105 232754.296 INFO             PET000 CATCHEM_FILE_READ: format=netcdf source=catchem_regrid_field path=ExtData/QFED/2021/03/qfed2.emis_so2.006.20210323.nc4
+20261105 232754.344 INFO             PET000 catchem_emis_update: reading emission for volcano @ 2021-03-23T00:00:00
+20261105 232754.381 INFO             PET000 CATCHEM_FILE_READ: format=point_ascii source=catchem_emis_read_points path=ExtData/volcanic/so2_volcanic_emissions_Carns.20210323.rc
+20261105 232754.399 INFO             PET000 catchem_emis_read_points: read 97 point sources from ExtData/volcanic/so2_volcanic_emissions_Carns.20210323.rc
+20261105 232849.999 INFO             PET000  Finalizing ESMF

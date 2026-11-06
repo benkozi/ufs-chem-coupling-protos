@@ -97,6 +97,7 @@ def test_an_unknown_cadence_cannot_be_mapped() -> None:
     with pytest.raises(ValueError, match="cadence"):
         # The point of the test is the value the type forbids.
         cz.stream_timing("weekly")  # type: ignore[arg-type]
+    assert cz.stream_timing("daily") == ("daily", "limit")
 
 
 def test_omitted_variables_are_neither_read_nor_exported(manifest: mf.Manifest) -> None:

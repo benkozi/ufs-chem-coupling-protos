@@ -128,10 +128,6 @@ def test_category_grid_must_exist(tmp_path: Path) -> None:
     with pytest.raises(pydantic.ValidationError, match="unknown grid"):
         mf.Manifest.model_validate(doc)
     doc = make(tmp_path).model_dump(mode="json")
-    doc["categories"]["bogus"] = doc["categories"]["dms"]
-    with pytest.raises(pydantic.ValidationError, match="bogus"):
-        mf.Manifest.model_validate(doc)
-    doc = make(tmp_path).model_dump(mode="json")
     doc["land_mask"]["grid"] = "nope"
     with pytest.raises(
         pydantic.ValidationError, match="land_mask references unknown grid"
@@ -217,8 +213,13 @@ def test_pressure_top_must_be_below_the_surface_pressure(tmp_path: Path) -> None
 # (4a9c0448…) equalled the defaults reviewed in PR #4's first commit (51f1cea, Python literals) except for four
 # amplitudes rounded to their intended literals; task 3 added the twenty `met` parameters the MET component
 # reads (soil layers, column, surface, geography, tracers); task 6 added nine host tracers (so2, no3, oh, h2o2,
-# so4, oc1, oc2, bc1, bc2), the only change since.
-DEFAULTS_DIGEST = "1327c7982a3a1f5e6a3f4b1e6b45149c2e771e724d9462bb7495b7eb0ed3a717"
+# so4, oc1, oc2, bc1, bc2). Issue #17 changed the dump (1327c798… -> 4b4d6887…) without touching the file: the
+# models grew `pole_centred` and `layout`, whose defaults now appear in the dump; DEFAULTS_FILE_DIGEST pins the
+# bytes of the file itself.
+DEFAULTS_DIGEST = "4b4d688783d9fdae015f8ebcfaabc79bfa28609778228378e0d2eda0982377c0"
+DEFAULTS_FILE_DIGEST = (
+    "2b484572253b9d41fce2850b80a2cd05ac9d3b81773048a55523d0d936ca5043"
+)
 
 
 def test_checked_in_defaults_validate_and_are_pinned() -> None:
@@ -227,6 +228,8 @@ def test_checked_in_defaults_validate_and_are_pinned() -> None:
         defaults.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
     )
     assert hashlib.sha256(canonical.encode()).hexdigest() == DEFAULTS_DIGEST
+    file_digest = hashlib.sha256(get_settings().defaults_file.read_bytes()).hexdigest()
+    assert file_digest == DEFAULTS_FILE_DIGEST
     assert not defaults.land_mask.file.is_absolute()
     assert all(not c.file.is_absolute() for c in defaults.categories.values())
 
@@ -296,3 +299,183 @@ def test_default_tracers_are_gas_or_aerosol_species_with_matching_units(
         aerosol = bool(entry.get("__is_aerosol", False))
         assert gas != aerosol, f"{tracer.name}: gas={gas} aerosol={aerosol}"
         assert tracer.units == ("kg/kg" if gas else "ug/kg"), tracer.name
+
+
+# --- the realistic profile's schema (issue #17) ------------------------------------------------------------
+
+
+def test_any_category_name_is_allowed_but_shared_files_must_agree(
+    tmp_path: Path,
+) -> None:
+    doc = make(tmp_path).model_dump(mode="json")
+    doc["categories"]["ship"] = dict(doc["categories"]["dms"], file="ship.nc")
+    assert "ship" in mf.Manifest.model_validate(doc).categories
+    # two categories writing the same file must agree on grid, cadence, levels and layout, and not share names
+    doc = make(tmp_path).model_dump(mode="json")
+    anthro2 = dict(doc["categories"]["anthro"])
+    anthro2["variables"] = {"SO2_elev": doc["categories"]["anthro"]["variables"]["SO2"]}
+    doc["categories"]["anthro2"] = anthro2
+    m = mf.Manifest.model_validate(doc)
+    assert m.categories_by_file()[m.categories["anthro"].file] == ["anthro", "anthro2"]
+    doc["categories"]["anthro2"]["cadence"] = "monthly"
+    with pytest.raises(pydantic.ValidationError, match="share the file"):
+        mf.Manifest.model_validate(doc)
+    doc["categories"]["anthro2"]["cadence"] = "hourly"
+    doc["categories"]["anthro2"]["variables"] = {
+        "SO2": anthro2["variables"]["SO2_elev"]
+    }
+    with pytest.raises(
+        pydantic.ValidationError, match=r"share the file .* and a variable name"
+    ):
+        mf.Manifest.model_validate(doc)
+
+
+def test_neareststod_maps_to_nn() -> None:
+    doc = {
+        "file": "x.nc",
+        "cadence": "static",
+        "regrid_method": "neareststod",
+        "grid": "g",
+        "is_3d": False,
+        "masked_by": "none",
+        "variables": {
+            "v": {"units": "1", "long_name": "v", "background": 1.0, "sources": []}
+        },
+    }
+    assert mf.Category.model_validate(doc).cece_mapalgo == "nn"
+    with pytest.raises(pydantic.ValidationError, match="cece_mapalgo"):
+        mf.Category.model_validate(doc | {"cece_mapalgo": "consd"})
+
+
+def daily_category(**overrides: object) -> dict[str, object]:
+    base: dict[str, object] = {
+        "file": "ExtData/CEDS/v2019/%y4/CEDS.2019.emis.%y4%m2%d2.nc",
+        "cadence": "daily",
+        "regrid_method": "conserve",
+        "grid": "inventory",
+        "is_3d": False,
+        "masked_by": "land",
+        "variables": {
+            "SO2": {
+                "units": "kg m-2 s-1",
+                "long_name": "s",
+                "background": 0.0,
+                "sources": [],
+            }
+        },
+        "layout": {
+            "model": "NETCDF3_64BIT_OFFSET",
+            "write_bounds_and_area": False,
+            "fill_value": -1.0e20,
+        },
+    }
+    return base | overrides
+
+
+def test_daily_categories_expand_their_date_tokens(tmp_path: Path) -> None:
+    clock = make(tmp_path).clock  # 2021-03-22T06Z, 24 h
+    category = mf.Category.model_validate(daily_category())
+    assert category.files_for(clock) == [
+        Path("ExtData/CEDS/v2019/2021/CEDS.2019.emis.20210322.nc"),
+        Path("ExtData/CEDS/v2019/2021/CEDS.2019.emis.20210323.nc"),
+    ]
+    midnight = clock.model_copy(update={"start": datetime(2021, 3, 22, tzinfo=UTC)})
+    assert len(category.files_for(midnight)) == 1
+    assert mf.expand_date_tokens(
+        Path("a/%y4/%m2/%d2.nc"), datetime(2021, 3, 2, tzinfo=UTC).date()
+    ) == Path("a/2021/03/02.nc")
+    static = mf.Category.model_validate(
+        daily_category(cadence="static", file="dust.nc")
+    )
+    assert static.files_for(clock) == [Path("dust.nc")]
+    with pytest.raises(pydantic.ValidationError, match="date tokens"):
+        mf.Category.model_validate(daily_category(file="no_tokens.nc"))
+    with pytest.raises(pydantic.ValidationError, match="date tokens"):
+        mf.Category.model_validate(daily_category(cadence="hourly"))
+
+
+def test_layout_rules() -> None:
+    layout = mf.FileLayout()
+    assert (layout.model, layout.dtype, layout.lon_name, layout.daily_record_hour) == (
+        "NETCDF4",
+        "float32",
+        "lon",
+        12.0,
+    )
+    assert layout.time_axis is None
+    table = mf.Category.model_validate(
+        daily_category(
+            file="ExtData/volcanic/so2_volcanic_emissions_Carns.%y4%m2%d2.rc",
+            variables={},
+            layout={"format": "point_table"},
+        )
+    )
+    assert table.is_point_table
+    with pytest.raises(pydantic.ValidationError, match="no variables"):
+        mf.Category.model_validate(daily_category(layout={"format": "point_table"}))
+    with pytest.raises(pydantic.ValidationError, match="not 3-D"):
+        mf.Category.model_validate(
+            daily_category(variables={}, is_3d=True, layout={"format": "point_table"})
+        )
+    with pytest.raises(pydantic.ValidationError, match="at least one variable"):
+        mf.Category.model_validate(daily_category(variables={}))
+    axis = {"units": "days since 2010-01-01 00:00:00", "values": [15.5, 45.0]}
+    with pytest.raises(pydantic.ValidationError, match="explicit time_axis"):
+        mf.Category.model_validate(daily_category(layout={"time_axis": axis}))
+    monthly = mf.Category.model_validate(
+        daily_category(cadence="monthly", file="htap.nc4", layout={"time_axis": axis})
+    )
+    assert monthly.layout is not None
+    assert monthly.layout.time_axis is not None
+    assert monthly.layout.time_axis.calendar == "standard"
+    assert not monthly.is_point_table
+
+
+def test_pole_centred_grids_and_coarsening() -> None:
+    with pytest.raises(pydantic.ValidationError, match="90"):
+        mf.LatLonGrid(
+            dlon=1.0, dlat=1.0, lon_first=-180.0, lat_first=-90.0, nlon=360, nlat=181
+        )
+    merra = mf.LatLonGrid(
+        dlon=1.0,
+        dlat=1.0,
+        lon_first=-180.0,
+        lat_first=-90.0,
+        nlon=360,
+        nlat=181,
+        pole_centred=True,
+    )
+    coarse = merra.coarsened(10)
+    assert (coarse.nlon, coarse.nlat, coarse.dlon, coarse.dlat) == (36, 19, 10.0, 10.0)
+    assert (coarse.lon_first, coarse.lat_first, coarse.pole_centred) == (
+        -180.0,
+        -90.0,
+        True,
+    )
+    regular = mf.inventory_grid(0.1)
+    ten = regular.coarsened(10)
+    assert (ten.nlon, ten.nlat, ten.lon_first, ten.lat_first) == (
+        360,
+        180,
+        -179.5,
+        -89.5,
+    )
+    assert regular.coarsened(1) is regular
+    with pytest.raises(ValueError, match="does not divide"):
+        regular.coarsened(7)
+    with pytest.raises(ValueError, match="does not divide"):
+        merra.coarsened(7)
+    with pytest.raises(ValueError, match="at least 1"):
+        regular.coarsened(0)
+
+
+def test_grid_factor_reaches_every_grid(tmp_path: Path) -> None:
+    m = mf.default_manifest(
+        resolution="C48", out_dir=tmp_path, command="x", grid_factor=2
+    )
+    assert m.grids["inventory"].nlon == 180
+    assert m.grids["gmi"].nlon == 72
+    with pytest.raises(ValueError, match="does not divide"):
+        mf.default_manifest(
+            resolution="C48", out_dir=tmp_path, command="x", grid_factor=7
+        )

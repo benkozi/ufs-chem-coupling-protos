@@ -2,11 +2,13 @@
 
     uv run python -m tools.make_mock_data --resolution C48 --out data/C48
 
-Fetches and validates the FV3 fix files for the resolution, writes the analytic land mask, the six category
-files and totals.yaml under <out>/inventories, and <out>/manifest.yaml describing all of it. The parameter
-set comes from the defaults file (`tools/defaults/manifest.yaml`, or --defaults / PROTOS_DEFAULTS) with the
-clock and grid options overriding it. Exit status 0 on success, 1 when the fetch or the generation fails
-(logged), 2 for a usage error.
+Fetches and validates the FV3 fix files for the resolution, writes the analytic land mask, the category files
+and totals.yaml, and <out>/manifest.yaml describing all of it. The parameter set comes from the profile's
+defaults file (`--profile analytic`: `tools/defaults/manifest.yaml`, six categories under <out>/inventories;
+`--profile realistic`: `tools/defaults/manifest_realistic.yaml`, CATChem's production categories at their real
+relative paths under <out>/ExtData plus the volcanic tables), or from --defaults / PROTOS_DEFAULTS, with the
+clock and grid options overriding it; `--grid-factor N` coarsens every grid N times for CI-sized output. Exit
+status 0 on success, 1 when the fetch or the generation fails (logged), 2 for a usage error.
 """
 
 from __future__ import annotations
@@ -58,10 +60,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="output directory, e.g. data/C48 (git-ignored)",
     )
     parser.add_argument(
+        "--profile",
+        choices=("analytic", "realistic"),
+        default="analytic",
+        help="parameter set: analytic (the six mock categories) or realistic (CATChem's production inventories mirrored from the ExtData catalog)",
+    )
+    parser.add_argument(
         "--defaults",
         type=Path,
         default=None,
-        help=f"defaults file (default: {settings.defaults_file}, or $PROTOS_DEFAULTS)",
+        help=f"defaults file (default: the profile's file, {settings.defaults_file} or {settings.realistic_defaults_file}; $PROTOS_DEFAULTS / $PROTOS_REALISTIC_DEFAULTS)",
+    )
+    parser.add_argument(
+        "--grid-factor",
+        type=int,
+        default=1,
+        metavar="N",
+        help="coarsen every inventory grid N times (N must divide the grid sizes; default 1, the real sizes)",
     )
     parser.add_argument(
         "--start",
@@ -112,20 +127,25 @@ def main(argv: Sequence[str] | None = None) -> int:
     args_list = list(sys.argv[1:] if argv is None else argv)
     args = build_parser().parse_args(args_list)
     log.configure(args.log_level)
+    settings = get_settings()
+    defaults_file = args.defaults
+    if defaults_file is None and args.profile == "realistic":
+        defaults_file = settings.realistic_defaults_file
     try:
         manifest = mf.default_manifest(
             resolution=args.resolution,
             out_dir=args.out,
             command=" ".join(["make_mock_data", *args_list]),
-            defaults_file=args.defaults,
+            defaults_file=defaults_file,
             start=args.start,
             duration_hours=args.hours,
             step_seconds=args.step_seconds,
             n_levels=args.levels,
             inventory_resolution_deg=args.inventory_resolution,
             source_url=args.fix_url,
+            grid_factor=args.grid_factor,
         )
-    except (pydantic.ValidationError, OSError) as exc:
+    except (pydantic.ValidationError, OSError, ValueError) as exc:
         logger.error("invalid run parameters or defaults file: %s", exc)
         return 2
     logger.info(
@@ -137,7 +157,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         manifest.clock.step_seconds,
         manifest.clock.n_levels,
     )
-    manifest_path = args.out / get_settings().manifest_filename
+    manifest_path = args.out / settings.manifest_filename
     try:
         sizes = fixfiles.fetch(
             manifest.fix, manifest.resolution, manifest.n, manifest.earth_radius_m
