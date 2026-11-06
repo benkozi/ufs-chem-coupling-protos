@@ -26,12 +26,14 @@ repos:
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
-        # Preserve Markdown hard line breaks (trailing double-space).
+        # Preserve Markdown hard line breaks (trailing double-space). tools/defaults/extdata holds files
+        # copied verbatim from the ExtData tree (the volcanic tables carry trailing spaces) and the
+        # scrape's JSON; they are data, kept as their producers wrote them.
         args:
           - --markdown-linebreak-ext=md
-        exclude: ^(design/|uv\.lock$)
+        exclude: ^(design/|uv\.lock$|tools/defaults/extdata/)
       - id: end-of-file-fixer
-        exclude: ^(design/|uv\.lock$)
+        exclude: ^(design/|uv\.lock$|tools/defaults/extdata/)
       - id: check-merge-conflict
       - id: detect-private-key
         # The release-script tests carry a fabricated PEM (BEGIN/END around
