@@ -19,6 +19,7 @@ scrape. Exit status 0, 1 for a write failure, 2 for an input the builder refuses
 from __future__ import annotations
 
 import argparse
+import math
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -37,7 +38,7 @@ logger = log.get_logger("realistic_defaults")
 
 # Which fraction multiplies a category's field: sea-surface concentrations are ocean, aviation and 3-D
 # oxidant fields cover the globe, everything else is land-bound (the analytic profile's rule).
-OCEAN_CATEGORIES = ("dms",)
+OCEAN_CATEGORIES = ("dms", "ship")
 UNMASKED_CATEGORIES = ("gmi",)
 UNMASKED_SUBSTRINGS = ("aviation",)
 SEASONAL_RELATIVE_AMPLITUDE = 0.3
@@ -47,6 +48,13 @@ FALLBACK_AMPLITUDE = 1.0e-10
 OCEAN_SOURCES = ((-30.0, 50.0), (160.0, -45.0))
 GLOBAL_SOURCE = (0.0, 0.0)
 SOURCE_SIGMA_DEG = 15.0
+# Scraped statistics are rounded to this many significant digits: a 17-digit float does not survive the YAML
+# formatter (yamlfix re-emits floats through ruyaml and moves the last digit), and the data do not carry it.
+SIGNIFICANT_DIGITS = 6
+
+
+def rounded(value: float) -> float:
+    return float(f"{value:.{SIGNIFICANT_DIGITS}g}")
 
 
 class ExtemisCategory(mf.Strict):
@@ -144,8 +152,8 @@ def grid_from_axes(lon: xd.AxisSummary, lat: xd.AxisSummary) -> mf.LatLonGrid:
     return mf.LatLonGrid(
         dlon=dlon,
         dlat=round(dlat, 9),
-        lon_first=min(lon.first, lon.last),
-        lat_first=lat_first,
+        lon_first=round(min(lon.first, lon.last), 9),
+        lat_first=round(lat_first, 9),
         nlon=lon.count,
         nlat=lat.count,
         pole_centred=pole_centred,
@@ -189,11 +197,11 @@ def _variable(
     masked_by: mf.MaskedBy,
     base: mf.ManifestDefaults,
 ) -> mf.Variable:
-    units = header.attributes.get("units", entry.units)
-    long_name = header.attributes.get("long_name", entry.long_name)
+    units = header.attributes.get("units") or entry.units
+    long_name = header.attributes.get("long_name") or entry.long_name
     if header.stats is not None:
-        background = max(header.stats.mean, 0.0)
-        amplitude = max(header.stats.max - background, 0.0)
+        background = rounded(max(header.stats.mean, 0.0))
+        amplitude = rounded(max(header.stats.max - background, 0.0))
         logger.info(
             "%s: background %.4e, amplitude %.4e from the scraped statistics",
             name,
@@ -227,11 +235,17 @@ def _variable(
 
 
 def _layout(
-    file: xd.FileHeader, first_variable: xd.VariableHeader, category: ExtemisCategory
+    file: xd.FileHeader,
+    first_variable: xd.VariableHeader,
+    category_variable: xd.VariableHeader,
+    category: ExtemisCategory,
 ) -> mf.FileLayout:
+    """The file's layout: model, coordinate names and dimension order from the file (`first_variable` is its first data variable), dtype, fill and the time-dimension flag from the category's own variable (CEDS and MEGAN start with a float64 `AREA` map; a static soil map may share a file with a time-bearing field)."""
     axes = file.axes
-    dtype: mf.DataType = "float64" if first_variable.dtype == "float64" else "float32"
-    fill = first_variable.attributes.get("_FillValue")
+    dtype: mf.DataType = (
+        "float64" if category_variable.dtype == "float64" else "float32"
+    )
+    fill = category_variable.attributes.get("_FillValue")
     time_axis = None
     record_hour = 12.0
     if "time" in axes:
@@ -253,6 +267,20 @@ def _layout(
         lev_name, time_name = axes["lev"].name, axes["time"].name
         if lev_name in dims and time_name in dims:
             lev_before_time = dims.index(lev_name) < dims.index(time_name)
+    time_dimension = (
+        "time" not in axes or axes["time"].name in category_variable.dimensions
+    )
+    if not time_dimension:
+        time_axis = None
+    if not time_dimension and category.frequency != "static":
+        raise BuildError(
+            f"{file.path}: variables without a time dimension in a {category.frequency} category"
+        )
+    lev_values = None
+    lev_units = None
+    if not category.is_2d and "lev" in axes:
+        lev_values = list(axes["lev"].values)
+        lev_units = axes["lev"].units
     model = file.model or "NETCDF4"
     if model not in get_args(mf.NetcdfModel):
         raise BuildError(f"{file.path}: unsupported NetCDF model {model!r}")
@@ -263,11 +291,19 @@ def _layout(
         lev_name=axes["lev"].name if "lev" in axes else "lev",
         time_name=axes["time"].name if "time" in axes else "time",
         dtype=dtype,
-        fill_value=float(fill) if isinstance(fill, int | float) else None,
+        # NaN cannot round-trip through YAML equality; xarray's default float fill is NaN anyway
+        fill_value=(
+            float(fill)
+            if isinstance(fill, int | float) and not math.isnan(float(fill))
+            else None
+        ),
         lev_before_time=lev_before_time,
         write_bounds_and_area=False,
         daily_record_hour=record_hour,
         time_axis=time_axis,
+        time_dimension=time_dimension,
+        lev_values=lev_values,
+        lev_units=lev_units,
     )
 
 
@@ -358,7 +394,12 @@ def build(inputs: Inputs) -> mf.ManifestDefaults:
                 level_order="top_down" if category.reverse_vertical else "bottom_up",
                 masked_by=masked_by,
                 variables=variables,
-                layout=_layout(header, first_header, category),
+                layout=_layout(
+                    header,
+                    first_header,
+                    header.variables[next(iter(map_entries))],
+                    category,
+                ),
             )
     skipped = sorted(set(inputs.extemis) - seen)
     if skipped:

@@ -256,17 +256,17 @@ def test_grid_factor_coarsens_every_grid(tmp_path: Path) -> None:
     assert "--grid-factor 2" in manifest.generator.command
 
 
-def test_grid_factor_must_divide_the_grids(
+def test_grid_factor_must_be_positive(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     with caplog.at_level(logging.ERROR, logger=log.ROOT_NAME):
         assert (
             cli.main(
-                ["--resolution", "C48", "--out", str(tmp_path), "--grid-factor", "7"]
+                ["--resolution", "C48", "--out", str(tmp_path), "--grid-factor", "0"]
             )
             == 2
         )
-    assert "does not divide" in caplog.text
+    assert "at least 1" in caplog.text
 
 
 @pytest.mark.usefixtures("fake_fetch")

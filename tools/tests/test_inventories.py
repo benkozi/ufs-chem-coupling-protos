@@ -646,3 +646,35 @@ def test_pole_centred_grid_bounds_are_clipped_and_areas_close() -> None:
     assert math.isclose(
         float(inv.cell_area(g, R).sum()), 4 * math.pi * R**2, rel_tol=1e-9
     )
+
+
+def test_timeless_static_file_and_real_level_values(tmp_path: Path) -> None:
+    manifest = small_manifest(tmp_path)
+    timeless = with_layout(
+        manifest,
+        "dust",
+        layout=mf.FileLayout(time_dimension=False, write_bounds_and_area=False),
+    )
+    land = inv.land_fraction(timeless.grids["inventory"], timeless.land_mask)
+    totals = inv.write_category(timeless, "dust", land)
+    assert len(totals.variables["clayfrac"].records) == 1
+    with netCDF4.Dataset(timeless.categories["dust"].file) as ds:
+        assert "time" not in ds.dimensions
+        assert ds["clayfrac"].dimensions == ("lat", "lon")
+        assert ds["clayfrac"].shape == (18, 36)
+    pressures = [float(1000 - 200 * k) for k in range(5)]
+    levelled = with_layout(
+        manifest,
+        "gmi",
+        layout=mf.FileLayout(lev_values=pressures, lev_units="hPa"),
+        level_order="top_down",
+    )
+    inv.write_category(levelled, "gmi", None)
+    with netCDF4.Dataset(levelled.categories["gmi"].file) as ds:
+        assert ds["lev"][:].tolist() == pressures
+        assert ds["lev"].units == "hPa"
+        assert ds["lev"].positive == "down"
+        assert "long_name" not in ds["lev"].ncattrs()
+    wrong = with_layout(manifest, "gmi", layout=mf.FileLayout(lev_values=[1.0, 2.0]))
+    with pytest.raises(ValueError, match="lev_values has 2 entries"):
+        inv.write_category(wrong, "gmi", None)

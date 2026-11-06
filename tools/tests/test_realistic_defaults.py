@@ -13,6 +13,8 @@ from tools import manifest as mf
 from tools import realistic_defaults as rd
 from tools.settings import get_settings
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
 CEDS = "ExtData/CEDS/v2019/2021/CEDS.2019.emis.20210322.nc"
 CEDS_TEMPLATE = "ExtData/CEDS/v2019/%y4/CEDS.2019.emis.%y4%m2%d2.nc"
 GMI = "ExtData/PIESA/L127/gmi.nc"
@@ -225,6 +227,7 @@ def headers_doc(n_levels: int = 5) -> dict[str, object]:
                 [1, 18, 36],
                 stats=stats(1.0e-12, 2.0e-11),
                 units="kg m-2 s-1",
+                _FillValue=-1.0e20,
             ),
         },
     )
@@ -552,3 +555,146 @@ def test_command_line(
         == settings.extdata_defaults_dir / settings.extdata_headers_filename
     )
     assert defaults.out == settings.realistic_defaults_file
+
+
+def test_real_file_quirks(inputs: dict[str, Path]) -> None:
+    """Static variables without a time dimension, real level values, NaN fills, empty unit strings, ship on the ocean."""
+    doc = json.loads(inputs["headers"].read_text())
+    files = {f["path"]: f for f in doc["files"]}
+    files[GMI]["variables"]["oh"]["attributes"] = {
+        "units": "",
+        "_FillValue": float("nan"),
+    }
+    dust_path = "ExtData/dust/FENGSHA_2022_NESDIS_inputs_10km_v3.2.nc"
+    dust = file_header(
+        dust_path,
+        "inventory",
+        ["dust"],
+        axes=lonlat(36, 18)
+        | {"time": axis("time", [0.0, 744.0], units="hours since 2018-01-01")},
+        variables={
+            "albedo_drag": variable(["time", "lat", "lon"], [2, 18, 36]),
+            "clayfrac": variable(
+                ["lat", "lon"], [18, 36], stats=stats(0.2, 0.7), units="-"
+            ),
+        },
+    )
+    doc["files"].append(dust)
+    inputs["headers"].write_text(json.dumps(doc))
+    catalog = json.loads(inputs["catalog"].read_text())
+    catalog["files"].append(
+        {
+            "path": dust_path,
+            "format": "netcdf",
+            "role": "inventory",
+            "sources": {"x": 1},
+            "categories": {"dust": ["2021-03-22T06:00:00"]},
+            "pets": [0],
+            "read_count": 1,
+            "first_seen": "20261105 232505.145",
+            "point_count": None,
+        }
+    )
+    inputs["catalog"].write_text(json.dumps(catalog))
+    config = yaml.safe_load(yaml.safe_dump(CATCHEM_CONFIG))
+    config["processes"]["extemis"]["dust"] = {
+        "source_file": dust_path,
+        "frequency": "static",
+        "regrid_method": "neareststod",
+        "is_2d": True,
+    }
+    inputs["config"].write_text(yaml.safe_dump(config))
+    emission_map = dict(EMISSION_MAP) | {
+        "dust": {
+            "clayfrac": {
+                "long_name": "Clay Fraction",
+                "units": "1",
+                "scale": [1.0],
+                "map": ["MET_CLAYFRAC"],
+            }
+        }
+    }
+    inputs["map"].write_text(yaml.safe_dump(emission_map))
+
+    defaults = rd.build(load(inputs))
+    gmi = defaults.categories["gmi"]
+    assert (
+        gmi.variables["oh"].units == "mol/mol"
+    )  # the file's empty string falls back to the map
+    assert gmi.layout is not None
+    assert (
+        gmi.layout.fill_value is None
+    )  # NaN is not a representable fill; xarray writes NaN by default
+    assert gmi.layout.lev_values == [5.0, 4.0, 3.0, 2.0, 1.0]
+    assert gmi.layout.lev_units is None
+    dust_cat = defaults.categories["dust"]
+    assert dust_cat.layout is not None
+    assert not dust_cat.layout.time_dimension
+    assert dust_cat.layout.time_axis is None
+    assert dust_cat.variables["clayfrac"].units == "-"
+    assert defaults.categories["ship"].masked_by == "ocean"
+    # the realistic defaults round-trip through YAML with equality (no NaN inside)
+    defaults.to_yaml(inputs["out"])
+    assert mf.ManifestDefaults.from_yaml(inputs["out"]) == defaults
+    # a non-static category whose variables have no time dimension is refused
+    config["processes"]["extemis"]["dust"]["frequency"] = "monthly"
+    inputs["config"].write_text(yaml.safe_dump(config))
+    with pytest.raises(
+        rd.BuildError, match="without a time dimension in a monthly category"
+    ):
+        rd.build(load(inputs))
+
+
+# --- the checked-in realistic defaults -----------------------------------------------------------------------
+
+# sha256 of the canonical JSON dump of ManifestDefaults from tools/defaults/manifest_realistic.yaml and of the
+# file's bytes, as written by tools/realistic_defaults.py on 2026-11-06 from the Ursa scrape of the same day
+# (python 3.14.7, 26 files described, statistics for every variable), then formatted by yamlfix as pre-commit
+# does (magnitudes are rounded to six significant digits so the formatter leaves every value as it is). A change
+# to the scrape, the builder or the analytic base changes these digests on purpose.
+REALISTIC_DIGEST = "fc88f1812ffeb2ca857bb6ff7182e57cac1b1a37a76646c4380f7aca44caf4ae"
+REALISTIC_FILE_DIGEST = (
+    "8a17b2ddd39cb76c638e6d38de141841556c6e698ddf6659e3f5879efe6c2c8e"
+)
+CATCHEM_CONFIG_PATH = Path(
+    "extern/CATChem/tests/Configs/Default/CATChem_new_config.yml"
+)
+EMISSION_MAP_PATH = Path("extern/CATChem/tests/Configs/Default/CATChem_emission.yml")
+
+
+def test_checked_in_realistic_defaults_are_pinned_and_regenerate_identically(
+    tmp_path: Path,
+) -> None:
+    import hashlib
+
+    settings = get_settings()
+    path = REPO_ROOT / settings.realistic_defaults_file
+    defaults = mf.ManifestDefaults.from_yaml(path)
+    canonical = json.dumps(
+        defaults.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+    )
+    assert hashlib.sha256(canonical.encode()).hexdigest() == REALISTIC_DIGEST
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == REALISTIC_FILE_DIGEST
+    assert len(defaults.categories) == 19
+    assert defaults.categories["volcano"].is_point_table
+    assert defaults.categories["gmi"].layout is not None
+    assert defaults.categories["gmi"].layout.lev_values is not None
+    assert len(defaults.categories["gmi"].layout.lev_values) == 127
+    assert defaults.categories["dust"].layout is not None
+    assert not defaults.categories["dust"].layout.time_dimension
+    assert all(not c.file.is_absolute() for c in defaults.categories.values())
+    assert all(str(c.file).startswith("ExtData/") for c in defaults.categories.values())
+    extdata = REPO_ROOT / settings.extdata_defaults_dir
+    rebuilt = rd.build(
+        rd.load_inputs(
+            extdata / settings.extdata_headers_filename,
+            extdata / settings.file_catalog_filename,
+            REPO_ROOT / CATCHEM_CONFIG_PATH,
+            REPO_ROOT / EMISSION_MAP_PATH,
+            REPO_ROOT / settings.defaults_file,
+        )
+    )
+    assert rebuilt == defaults
+    # the checked-in file is the builder's output after yamlfix (pre-commit); the formatter must not change values
+    rebuilt.to_yaml(tmp_path / "again.yaml")
+    assert mf.ManifestDefaults.from_yaml(tmp_path / "again.yaml") == defaults

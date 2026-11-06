@@ -461,10 +461,22 @@ def test_pole_centred_grids_and_coarsening() -> None:
         -89.5,
     )
     assert regular.coarsened(1) is regular
-    with pytest.raises(ValueError, match="does not divide"):
-        regular.coarsened(7)
-    with pytest.raises(ValueError, match="does not divide"):
-        merra.coarsened(7)
+    # a factor that does not divide the counts rounds them and keeps the extent (the 9 km FENGSHA grid)
+    fengsha = mf.LatLonGrid(
+        dlon=360.0 / 4444,
+        dlat=0.081,
+        lon_first=-180.0 + 180.0 / 4444,
+        lat_first=-89.9595,
+        nlon=4444,
+        nlat=2222,
+    )
+    coarse = fengsha.coarsened(10)
+    assert (coarse.nlon, coarse.nlat) == (444, 222)
+    assert coarse.lon_first == pytest.approx(-180.0 + 180.0 / 444)
+    assert coarse.lat_first - coarse.dlat / 2 == pytest.approx(-90.0)
+    assert coarse.nlat * coarse.dlat == pytest.approx(2222 * 0.081)
+    assert merra.coarsened(7).nlat == 27  # round(180 / 7) + 1
+    assert regular.coarsened(10_000).nlon == 1
     with pytest.raises(ValueError, match="at least 1"):
         regular.coarsened(0)
 
@@ -475,7 +487,16 @@ def test_grid_factor_reaches_every_grid(tmp_path: Path) -> None:
     )
     assert m.grids["inventory"].nlon == 180
     assert m.grids["gmi"].nlon == 72
-    with pytest.raises(ValueError, match="does not divide"):
+    with pytest.raises(ValueError, match="at least 1"):
         mf.default_manifest(
-            resolution="C48", out_dir=tmp_path, command="x", grid_factor=7
+            resolution="C48", out_dir=tmp_path, command="x", grid_factor=0
         )
+
+
+def test_timeless_layout_needs_a_static_category() -> None:
+    doc = daily_category(
+        cadence="static", file="dust.nc", layout={"time_dimension": False}
+    )
+    assert mf.Category.model_validate(doc).layout is not None
+    with pytest.raises(pydantic.ValidationError, match="must be static"):
+        mf.Category.model_validate(daily_category(layout={"time_dimension": False}))

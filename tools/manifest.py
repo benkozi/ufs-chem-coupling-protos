@@ -164,25 +164,36 @@ class LatLonGrid(Strict):
         return self
 
     def coarsened(self, factor: int) -> LatLonGrid:
-        """The grid with `factor` times the spacing; `factor` must divide the cell counts (the interior count for a pole_centred grid)."""
+        """The grid with about `factor` times the spacing and the same extent: cell counts are divided and rounded (at least one cell; a pole_centred grid keeps its polar centres), so any factor works on any grid."""
         if factor < 1:
             raise ValueError("grid factor must be at least 1")
         if factor == 1:
             return self
-        interior = self.nlat - 1 if self.pole_centred else self.nlat
-        if self.nlon % factor or interior % factor:
-            raise ValueError(
-                f"grid factor {factor} does not divide the grid ({self.nlon} x {self.nlat}{', pole-centred' if self.pole_centred else ''})"
+        nlon = max(round(self.nlon / factor), 1)
+        dlon = 360.0 / nlon
+        west = self.lon_first - self.dlon / 2
+        if self.pole_centred:
+            nlat = max(round((self.nlat - 1) / factor), 1) + 1
+            return LatLonGrid(
+                dlon=dlon,
+                dlat=180.0 / (nlat - 1),
+                lon_first=self.lon_first,
+                lat_first=-90.0,
+                nlon=nlon,
+                nlat=nlat,
+                pole_centred=True,
             )
-        shift = 0.0 if self.pole_centred else (factor - 1) / 2
+        nlat = max(round(self.nlat / factor), 1)
+        south = self.lat_first - self.dlat / 2
+        extent = self.nlat * self.dlat
+        dlat = extent / nlat
         return LatLonGrid(
-            dlon=self.dlon * factor,
-            dlat=self.dlat * factor,
-            lon_first=self.lon_first + shift * self.dlon,
-            lat_first=self.lat_first + shift * self.dlat,
-            nlon=self.nlon // factor,
-            nlat=interior // factor + (1 if self.pole_centred else 0),
-            pole_centred=self.pole_centred,
+            dlon=dlon,
+            dlat=dlat,
+            lon_first=west + dlon / 2,
+            lat_first=south + dlat / 2,
+            nlon=nlon,
+            nlat=nlat,
         )
 
 
@@ -342,6 +353,17 @@ class FileLayout(Strict):
         ge=0,
         lt=24,
     )
+    time_dimension: bool = Field(
+        default=True,
+        description="False for a static file whose variables have no time dimension at all (the FENGSHA soil inputs); only allowed with cadence static.",
+    )
+    lev_values: list[float] | None = Field(
+        default=None,
+        description="The level coordinate values of a 3-D file written verbatim (e.g. GMI's pressures), or null for the level index.",
+    )
+    lev_units: str | None = Field(
+        default=None, description="Units attribute of the level coordinate, or null."
+    )
     time_axis: ExplicitTimeAxis | None = Field(
         default=None,
         description="The file's own time coordinate for monthly and static files, or null for the analytic axis; not allowed for hourly and daily files.",
@@ -412,6 +434,12 @@ class Category(Strict):
             raise ValueError(
                 f"an explicit time_axis is not allowed for a {self.cadence} category"
             )
+        if (
+            layout is not None
+            and not layout.time_dimension
+            and self.cadence != "static"
+        ):
+            raise ValueError("a file without a time dimension must be static")
         has_tokens = any(token in str(self.file) for token in DATE_TOKENS)
         if (self.cadence == "daily") != has_tokens:
             raise ValueError(

@@ -520,6 +520,7 @@ def write_file(
     axis = time_axis(first.cadence, manifest.clock, layout, day)
     time_name = layout.time_name if layout else "time"
     with_extras = layout is None or layout.write_bounds_and_area
+    timeless = layout is not None and not layout.time_dimension
     ds = _grid_dataset(grid, manifest.earth_radius_m, layout)
     time_attrs = {
         "units": axis.units,
@@ -529,30 +530,40 @@ def write_file(
     }
     if with_extras:
         time_attrs["bounds"] = "time_bnds"
-    ds = ds.assign_coords(
-        {time_name: (time_name, np.array(axis.values, dtype=np.float64), time_attrs)}
-    )
-    if with_extras:
-        ds["time_bnds"] = ((time_name, "nv"), np.array(axis.bounds, dtype=np.float64))
-    dims = _dims(layout, first.is_3d)
-    if first.is_3d:
-        lev_name = layout.lev_name if layout else "lev"
+    if not timeless:
         ds = ds.assign_coords(
             {
-                lev_name: (
-                    lev_name,
-                    np.arange(manifest.clock.n_levels, dtype=np.int32),
-                    {
-                        "long_name": "model level index",
-                        "positive": "up"
-                        if first.level_order == "bottom_up"
-                        else "down",
-                        "axis": "Z",
-                        "level_order": first.level_order,
-                    },
+                time_name: (
+                    time_name,
+                    np.array(axis.values, dtype=np.float64),
+                    time_attrs,
                 )
             }
         )
+    if with_extras and not timeless:
+        ds["time_bnds"] = ((time_name, "nv"), np.array(axis.bounds, dtype=np.float64))
+    dims = _dims(layout, first.is_3d)
+    if timeless:
+        dims = tuple(d for d in dims if d != time_name)
+    if first.is_3d:
+        lev_name = layout.lev_name if layout else "lev"
+        lev_attrs: dict[str, str] = {
+            "positive": "up" if first.level_order == "bottom_up" else "down",
+            "axis": "Z",
+            "level_order": first.level_order,
+        }
+        if layout is not None and layout.lev_values is not None:
+            if len(layout.lev_values) != manifest.clock.n_levels:
+                raise ValueError(
+                    f"layout.lev_values has {len(layout.lev_values)} entries, the clock has {manifest.clock.n_levels} levels"
+                )
+            lev_coord = np.array(layout.lev_values, dtype=np.float64)
+            if layout.lev_units is not None:
+                lev_attrs["units"] = layout.lev_units
+        else:
+            lev_coord = np.arange(manifest.clock.n_levels, dtype=np.int32)
+            lev_attrs["long_name"] = "model level index"
+        ds = ds.assign_coords({lev_name: (lev_name, lev_coord, lev_attrs)})
     area = cell_area(grid, manifest.earth_radius_m)
     dtype = np.dtype(layout.dtype if layout else "float32")
     classic = layout is not None and layout.model != "NETCDF4"
@@ -573,6 +584,8 @@ def write_file(
             records = summed if category.is_3d else summed[:, None]
             if category.is_3d and layout is not None and layout.lev_before_time:
                 values = np.swapaxes(values, 0, 1)
+            if timeless:
+                values = values[0]
             ds[var_name] = (
                 dims,
                 values.astype(dtype),

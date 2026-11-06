@@ -33,12 +33,14 @@ set_tests_properties(
 )
 
 # The realistic profile (issue #17): CATChem's production inventories mirrored from the ExtData catalog, coarsened
-# ten times for CI (0.1° -> 1°), under data/C48/ExtData. Its parameter set is written by tools/realistic_defaults.py
+# ten times for CI (0.1° -> 1°) and five times for the C96 set (0.5°), under data/<res>_realistic/ExtData: its own
+# directory, because the analytic fixture's manifest.yaml and inventories/totals.yaml under data/<res> are what the
+# generator and conservation tests read (the first cloud run of this fixture overwrote them). Its parameter set is written by tools/realistic_defaults.py
 # from the Ursa scrape, so the tests are registered only once that file is checked in.
 if(EXISTS ${PROJECT_SOURCE_DIR}/tools/defaults/manifest_realistic.yaml)
   add_test(
     NAME make_mock_data_realistic
-    COMMAND ${UV_EXECUTABLE} run --no-sync python -m tools.make_mock_data --resolution C48 --out data/C48
+    COMMAND ${UV_EXECUTABLE} run --no-sync python -m tools.make_mock_data --resolution C48 --out data/C48_realistic
             --profile realistic --grid-factor 10
     WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
   )
@@ -50,10 +52,27 @@ if(EXISTS ${PROJECT_SOURCE_DIR}/tools/defaults/manifest_realistic.yaml)
       TIMEOUT 900
   )
 
+  # Until issue #16 teaches the generator's defaults the production categories, gen_configs refuses the
+  # realistic manifest by name; this test retires with #16.
+  add_test(
+    NAME gen_configs_realistic_refused
+    COMMAND ${UV_EXECUTABLE} run --no-sync python -m tools.gen_configs --manifest data/C48_realistic/manifest.yaml
+            --out build/gen/C48_realistic --pets 6
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+  )
+  set_tests_properties(
+    gen_configs_realistic_refused
+    PROPERTIES
+      FIXTURES_REQUIRED mockdata_realistic
+      PASS_REGULAR_EXPRESSION "is not a variable of the manifest|the defaults do not know"
+      LABELS ci
+      TIMEOUT 120
+  )
+
   add_test(
     NAME make_mock_data_realistic_c96
-    COMMAND ${UV_EXECUTABLE} run --no-sync python -m tools.make_mock_data --resolution C96 --out data/C96
-            --profile realistic
+    COMMAND ${UV_EXECUTABLE} run --no-sync python -m tools.make_mock_data --resolution C96 --out data/C96_realistic
+            --profile realistic --grid-factor 5
     WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
   )
   set_tests_properties(
