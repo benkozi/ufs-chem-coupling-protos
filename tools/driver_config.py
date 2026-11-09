@@ -101,7 +101,8 @@ class DriverConfig(Strict):
         description="The run's name (summary line, driver component, pass expression)."
     )
     components: list[str] = Field(
-        description="EARTH_component_list in order (CECE, MET, CATCHEM).", min_length=1
+        description="EARTH_component_list in order (MET, CATCHEM, CECE): the initialize order; MET precedes CECE.",
+        min_length=1,
     )
     pets: int = Field(description="PET count; every component runs on all PETs.", gt=0)
     verbosity: str = Field(description="NUOPC Verbosity attribute of every component.")
@@ -155,6 +156,15 @@ class DriverConfig(Strict):
         if unknown:
             raise ValueError(
                 f"unknown components {unknown}; the driver knows {', '.join(KNOWN_COMPONENTS)}"
+            )
+        # CECE takes its grid from MET's realized tracer field (CECE_SetHostGeometry); the driver initializes
+        # its children in list order, so the host comes first.
+        if "CECE" in self.components and (
+            "MET" not in self.components
+            or self.components.index("MET") > self.components.index("CECE")
+        ):
+            raise ValueError(
+                f"components {self.components}: list MET before CECE (CECE's grid comes from MET's tracer field)"
             )
         return self
 

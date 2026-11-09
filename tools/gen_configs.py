@@ -238,7 +238,7 @@ def generate(
     )
     dc.DriverConfig(
         prototype=defaults.prototype,
-        components=["CECE", "MET", "CATCHEM"],
+        components=["MET", "CATCHEM", "CECE"],
         pets=pets,
         verbosity=defaults.verbosity,
         manifest=manifest_path,

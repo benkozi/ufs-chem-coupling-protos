@@ -27,7 +27,7 @@ module proto_met
   implicit none
   private
 
-  public :: SetServices, proto_met_configure
+  public :: SetServices, proto_met_configure, TRACER_FIELD
 
   character(len=*), parameter :: STATE_LABEL = "proto_met_state"
   character(len=*), parameter :: TRACER_FIELD = "inst_tracer_mass_frac"

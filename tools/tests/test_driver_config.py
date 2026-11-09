@@ -24,7 +24,7 @@ def manifest() -> mf.Manifest:
 def driver(**overrides: object) -> dc.DriverConfig:
     base: dict[str, object] = {
         "prototype": "cece_met_catchem",
-        "components": ["CECE", "MET", "CATCHEM"],
+        "components": ["MET", "CATCHEM", "CECE"],
         "pets": 6,
         "verbosity": "high",
         "manifest": Path("/root/data/C48/manifest.yaml"),
@@ -62,7 +62,7 @@ def test_every_field_of_every_model_has_a_description() -> None:
 def test_rendered_driver_config(tmp_path: Path) -> None:
     text = driver().render()
     assert "prototype: cece_met_catchem\n" in text
-    assert "EARTH_component_list: CECE MET CATCHEM\n" in text
+    assert "EARTH_component_list: MET CATCHEM CECE\n" in text
     for prefix in ("CECE", "MET", "CATCHEM"):
         assert f"{prefix}_petlist_bounds: 0 5\n" in text
         assert f"{prefix}_attributes::\n  Verbosity = high\n::\n" in text
@@ -162,3 +162,13 @@ def test_hosted_import_fields_must_be_single_tokens() -> None:
         dc.HostedImportRow(
             standard_name="a b", category="anthro", variable="SO2", file=Path("/f.nc")
         )
+
+
+def test_cece_needs_its_grid_host_listed_before_it() -> None:
+    # CECE takes its grid from MET's tracer field (CECE_SetHostGeometry): the host realizes first.
+    with pytest.raises(pydantic.ValidationError, match="MET before CECE"):
+        driver(components=["CECE", "MET", "CATCHEM"])
+    with pytest.raises(pydantic.ValidationError, match="MET before CECE"):
+        driver(components=["CECE"], run_sequence=["CECE"])
+    assert driver(components=["MET", "CECE"]).components == ["MET", "CECE"]
+    assert driver(components=["MET", "CATCHEM"]).components == ["MET", "CATCHEM"]

@@ -106,8 +106,8 @@ On the Mac, outside the container: `uv sync --frozen`, `uv run pre-commit run --
 
 | Path | Repository | Branch | Pinned commit |
 | --- | --- | --- | --- |
-| `extern/CATChem` | `https://github.com/bbakernoaa/CATChem.git` | `feature/rework` | `84532349` |
-| `extern/CECE` | `https://github.com/benkozi/CECE.git` (fork of `ufs-community/CECE`) | `feature/multi-tile-host-decomp` (task 4, cut from upstream `develop` `25f7209`; section 10) | the branch tip |
+| `extern/CATChem` | `https://github.com/benkozi/CATChem.git` (fork of `ufs-community/CATChem`) | `feature/cece-coupling-proto` (task 5, cut from upstream `develop` `b22dc16`; sections 11 and 14) | `df9b41a2` |
+| `extern/CECE` | `https://github.com/benkozi/CECE.git` (fork of `ufs-community/CECE`) | `feature/multi-tile-host-decomp` (task 4, cut from upstream `develop` `25f7209`; section 10) | `7aea59b` (issue 16: `d22e8d4` adds `CECE_SetHostGeometry`, ufs-community/CECE#166; `7aea59b` its harness cases, docs and a format fix on the parent-grid path) |
 
 `extern/CECE` carries `extern/helm` (NOAA-EMC/HELM) and `extern/yaml-cpp`; `extern/CATChem` carries `src/external/GOCART` and `src/external/musica` (unused with `CATCHEM_BUILD_MUSICA=OFF`).
 

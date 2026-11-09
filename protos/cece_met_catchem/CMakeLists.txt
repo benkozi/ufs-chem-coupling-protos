@@ -69,6 +69,10 @@ require catchem_emis_update: Emission data updated
 forbid CATChem: emission open category=
 forbid AQMIO: open iomode=read path=
 require MET: hosted import extemis_anthro_SO2 ShareStatusField=shared
+require \[Cap\] grid source: host field MET/inst_tracer_mass_frac \(tileCount=6, local DE [0-5] of tile [1-6]\)
+require \[Cap\] Host grid block: .* \(48x48\), corners 49x49
+forbid \[Cap\] Parent grid:
+forbid \[Cap\] No parent grid or mesh
 require \[Cap\] Kokkos OpenMP threads from the ESMF VM: 1 PE\(s\) on this PET
 below 1200000 cece_met_catchem: memory per PET max virt [0-9]+ KB phys ([0-9]+) KB \(at end\)
 ]=]
@@ -381,6 +385,10 @@ require MET: hosted import extemis_dust_sep ShareStatusField=shared
 forbid Unrecognized emission field units
 forbid Unrecognized vertical_dist option
 forbid DRIVER FATAL
+require \[Cap\] grid source: host field MET/inst_tracer_mass_frac \(tileCount=6, local DE [0-5] of tile [1-6]\)
+require \[Cap\] Host grid block: .* \(48x48\), corners 49x49
+forbid \[Cap\] Parent grid:
+forbid \[Cap\] No parent grid or mesh
 require \[Cap\] Kokkos OpenMP threads from the ESMF VM: 1 PE\(s\) on this PET
 below 1200000 cece_met_catchem: memory per PET max virt [0-9]+ KB phys ([0-9]+) KB \(at end\)
 ]=]
