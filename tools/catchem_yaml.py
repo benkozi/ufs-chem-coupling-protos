@@ -212,10 +212,23 @@ def _category_defaults(name: str, defaults: gd.GenDefaults) -> gd.CategoryDefaul
     return defaults.categories[name]
 
 
+def _is_inactive(
+    name: str, category: mf.Category, cat_defaults: gd.CategoryDefaults
+) -> bool:
+    """A point-table category or one the defaults switch off: no map entry, no import, no stream; it must have no variables."""
+    if cat_defaults.inactive and category.variables:
+        raise ConfigError(
+            f"category {name!r} is inactive in the generator defaults but the manifest gives it variables"
+        )
+    return category.is_point_table or cat_defaults.inactive
+
+
 def emission_map(manifest: mf.Manifest, defaults: gd.GenDefaults) -> EmissionMap:
     categories: dict[str, dict[str, EmissionMapEntry]] = {}
     for name, category in manifest.categories.items():
         cat_defaults = _category_defaults(name, defaults)
+        if _is_inactive(name, category, cat_defaults):
+            continue
         entries: dict[str, EmissionMapEntry] = {}
         for variable, spec in category.variables.items():
             if variable not in cat_defaults.variables:
@@ -376,6 +389,10 @@ class Extemis(Strict):
     categories: dict[str, ExtemisCategory] = Field(
         description="Gridded categories by name."
     )
+    inactive: dict[str, PointCategory] = Field(
+        default_factory=dict,
+        description="Categories written switched off (activate: false, gridded: false): the manifest's point tables and the defaults' inactive entries.",
+    )
     point: PointCategory = Field(description="The point category, always off.")
 
     def to_mapping(self) -> dict[str, object]:
@@ -386,20 +403,30 @@ class Extemis(Strict):
         }
         for name, category in self.categories.items():
             doc[name] = category.model_dump(mode="json", exclude_none=True)
+        for name, off in self.inactive.items():
+            doc[name] = off.model_dump(mode="json")
         doc["point"] = self.point.model_dump(mode="json")
         return doc
 
     @classmethod
     def from_mapping(cls, doc: dict[str, object]) -> Extemis:
+        """A block with only the point keys (activate, gridded) is an inactive category; anything else a gridded one."""
         fixed = {"activate", "global_diagnostics", "source", "point"}
+        point_keys = set(PointCategory.model_fields)
+        blocks = {k: v for k, v in doc.items() if k not in fixed}
         return cls(
             activate=bool(doc["activate"]),
             global_diagnostics=bool(doc.get("global_diagnostics", True)),
             source=doc.get("source", "file"),  # type: ignore[arg-type]
             categories={
                 k: ExtemisCategory.model_validate(v)
-                for k, v in doc.items()
-                if k not in fixed
+                for k, v in blocks.items()
+                if not (isinstance(v, dict) and set(v) <= point_keys)
+            },
+            inactive={
+                k: PointCategory.model_validate(v)
+                for k, v in blocks.items()
+                if isinstance(v, dict) and set(v) <= point_keys
             },
             point=PointCategory.model_validate(doc.get("point", {})),
         )
@@ -456,14 +483,19 @@ def science_config(
     `source_files` it is the file-path comparison run (`source: file`, the manifest's inventory paths).
     """
     categories: dict[str, ExtemisCategory] = {}
+    inactive: dict[str, PointCategory] = {}
     for name, category in manifest.categories.items():
         cat_defaults = _category_defaults(name, defaults)
+        if _is_inactive(name, category, cat_defaults):
+            inactive[name] = PointCategory()
+            continue
         source = (
             str(rooted(category.file, data_root or Path.cwd()))
             if source_files
             else None
         )
         categories[name] = ExtemisCategory(
+            scale_factor=cat_defaults.scale_factor,
             source_file=source,
             is_2d=not category.is_3d,
             frequency=category.cadence,
@@ -471,6 +503,8 @@ def science_config(
             vertical_dist=cat_defaults.vertical_dist,
             plume_rise=cat_defaults.plume_rise,
             apply_method=cat_defaults.apply_method,
+            # the import copy flips a 3-D field when set (catchem_emis_copy_imports): a top-down file needs it
+            reverse_vertical=category.level_order == "top_down",
             diagnostics=cat_defaults.diagnostics,
         )
     return ScienceConfig(
@@ -508,6 +542,7 @@ def science_config(
                 global_diagnostics=False,
                 source="file" if source_files else "nuopc_import",
                 categories=categories,
+                inactive=inactive,
                 point=PointCategory(),
             ),
         ),

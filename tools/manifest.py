@@ -12,8 +12,10 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import Literal, Self
+from typing import Literal, Self, cast
 
+import netCDF4
+import numpy as np
 import yaml
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
@@ -111,6 +113,11 @@ class Clock(Strict):
         description="Number of model levels (NPZ); the vertical size of 3-D inventories.",
         gt=0,
     )
+    daily_padding_days: int = Field(
+        default=0,
+        description="Calendar days written before and after the run for a daily category (issue #18: CECE's linear blend needs the records on both sides of the window; the realistic profile uses 1).",
+        ge=0,
+    )
 
     @model_validator(mode="after")
     def _step_divides_duration(self) -> Clock:
@@ -127,6 +134,16 @@ class Clock(Strict):
     @property
     def n_steps(self) -> int:
         return self.duration_hours * 3600 // self.step_seconds
+
+    def calendar_days(self) -> list[date]:
+        """The UTC calendar days the run touches, padded by `daily_padding_days` on each side, in order."""
+        first = self.start.astimezone(UTC).date() - timedelta(
+            days=self.daily_padding_days
+        )
+        last = (self.end - timedelta(microseconds=1)).astimezone(
+            UTC
+        ).date() + timedelta(days=self.daily_padding_days)
+        return [first + timedelta(days=i) for i in range((last - first).days + 1)]
 
 
 class LatLonGrid(Strict):
@@ -299,6 +316,10 @@ class Variable(Strict):
     vertical: Vertical | None = Field(
         default=None, description="Vertical profile for 3-D data, or null."
     )
+    missing_where_masked: bool = Field(
+        default=False,
+        description="Write the layout's fill value (NaN when it has none) where the category's mask fraction is below the land mask's threshold, instead of zero: the real clay and sand fractions are fill over the ocean. Needs a masked category.",
+    )
 
 
 class ExplicitTimeAxis(Strict):
@@ -311,6 +332,20 @@ class ExplicitTimeAxis(Strict):
     values: list[float] = Field(
         description="Every record time in `units`, in file order.", min_length=1
     )
+
+    def stamps(self) -> list[datetime]:
+        """The record times as UTC datetimes (netCDF4's CF decoding)."""
+        decoded = netCDF4.num2date(
+            np.asarray(self.values, dtype=np.float64),
+            units=self.units,
+            calendar=self.calendar,
+            only_use_cftime_datetimes=False,
+            only_use_python_datetimes=True,
+        )
+        dates = decoded if isinstance(decoded, np.ndarray) else np.array([decoded])
+        return [
+            d.replace(tzinfo=UTC) for d in cast(list[datetime], dates.ravel().tolist())
+        ]
 
 
 class FileLayout(Strict):
@@ -366,7 +401,11 @@ class FileLayout(Strict):
     )
     time_axis: ExplicitTimeAxis | None = Field(
         default=None,
-        description="The file's own time coordinate for monthly and static files, or null for the analytic axis; not allowed for hourly and daily files.",
+        description="The file's own time coordinate for monthly and static files, or null for the analytic axis; not allowed for hourly and daily files. With time_dimension false it is the coordinate the file carries although the category's variables do not use it.",
+    )
+    time_bearing_sibling: str | None = Field(
+        default=None,
+        description="Name of an extra variable written on (time, lat, lon) in a file whose category variables have no time dimension (the real soil file's albedo_drag beside clayfrac); needs time_axis and time_dimension false.",
     )
 
 
@@ -440,6 +479,20 @@ class Category(Strict):
             and self.cadence != "static"
         ):
             raise ValueError("a file without a time dimension must be static")
+        if (
+            layout is not None
+            and layout.time_bearing_sibling is not None
+            and (layout.time_dimension or layout.time_axis is None)
+        ):
+            raise ValueError(
+                "time_bearing_sibling needs time_dimension false and the file's time_axis"
+            )
+        if self.masked_by == "none" and any(
+            v.missing_where_masked for v in self.variables.values()
+        ):
+            raise ValueError(
+                "missing_where_masked needs a category masked by land or ocean"
+            )
         has_tokens = any(token in str(self.file) for token in DATE_TOKENS)
         if (self.cadence == "daily") != has_tokens:
             raise ValueError(
@@ -452,12 +505,14 @@ class Category(Strict):
         return self.layout is not None and self.layout.format == "point_table"
 
     def files_for(self, clock: Clock) -> list[Path]:
-        """The files of the category for the clock: one per calendar day the run touches for daily, else the one file."""
+        """The files of the category for the clock: one per calendar day the run touches (plus the clock's padding days for a gridded series; a point table is copied for the run's days only) for daily, else the one file."""
         if self.cadence != "daily":
             return [self.file]
-        first = clock.start.astimezone(UTC).date()
-        last = (clock.end - timedelta(microseconds=1)).astimezone(UTC).date()
-        days = [first + timedelta(days=i) for i in range((last - first).days + 1)]
+        days = (
+            clock.model_copy(update={"daily_padding_days": 0}).calendar_days()
+            if self.is_point_table
+            else clock.calendar_days()
+        )
         return [expand_date_tokens(self.file, day) for day in days]
 
 

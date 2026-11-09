@@ -4,6 +4,7 @@ clock:
   duration_hours: 24
   step_seconds: 720
   n_levels: 127
+  daily_padding_days: 1
 grids:
   inventory:
     dlon: 1.0
@@ -93,6 +94,7 @@ categories:
           relative_amplitude: 0.3
           peak_month: 7
         vertical:
+        missing_where_masked: false
     layout:
       format: netcdf
       model: NETCDF4
@@ -124,6 +126,7 @@ categories:
           - 6570.0
           - 7300.0
           - 8030.0
+      time_bearing_sibling:
   oc_aviation_lto:
     file: ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_oc.aviation_lto.x3600_y1800_t12.2010.nc4
     cadence: monthly
@@ -148,6 +151,7 @@ categories:
           relative_amplitude: 0.3
           peak_month: 7
         vertical:
+        missing_where_masked: false
     layout:
       format: netcdf
       model: NETCDF4
@@ -179,6 +183,7 @@ categories:
           - 6570.0
           - 7300.0
           - 8030.0
+      time_bearing_sibling:
   bc_aviation_lto:
     file: ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_bc.aviation_lto.x3600_y1800_t12.2010.nc4
     cadence: monthly
@@ -203,6 +208,7 @@ categories:
           relative_amplitude: 0.3
           peak_month: 7
         vertical:
+        missing_where_masked: false
     layout:
       format: netcdf
       model: NETCDF4
@@ -234,6 +240,7 @@ categories:
           - 6570.0
           - 7300.0
           - 8030.0
+      time_bearing_sibling:
   so2_aviation_cds:
     file: ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_so2.aviation_cds.x3600_y1800_t12.2010.nc4
     cadence: monthly
@@ -258,6 +265,7 @@ categories:
           relative_amplitude: 0.3
           peak_month: 7
         vertical:
+        missing_where_masked: false
     layout:
       format: netcdf
       model: NETCDF4
@@ -289,6 +297,7 @@ categories:
           - 6570.0
           - 7300.0
           - 8030.0
+      time_bearing_sibling:
   oc_aviation_cds:
     file: ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_oc.aviation_cds.x3600_y1800_t12.2010.nc4
     cadence: monthly
@@ -313,6 +322,7 @@ categories:
           relative_amplitude: 0.3
           peak_month: 7
         vertical:
+        missing_where_masked: false
     layout:
       format: netcdf
       model: NETCDF4
@@ -344,6 +354,7 @@ categories:
           - 6570.0
           - 7300.0
           - 8030.0
+      time_bearing_sibling:
   bc_aviation_cds:
     file: ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_bc.aviation_cds.x3600_y1800_t12.2010.nc4
     cadence: monthly
@@ -368,6 +379,7 @@ categories:
           relative_amplitude: 0.3
           peak_month: 7
         vertical:
+        missing_where_masked: false
     layout:
       format: netcdf
       model: NETCDF4
@@ -399,6 +411,7 @@ categories:
           - 6570.0
           - 7300.0
           - 8030.0
+      time_bearing_sibling:
   so2_aviation_crs:
     file: ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_so2.aviation_crs.x3600_y1800_t12.2010.nc4
     cadence: monthly
@@ -423,6 +436,7 @@ categories:
           relative_amplitude: 0.3
           peak_month: 7
         vertical:
+        missing_where_masked: false
     layout:
       format: netcdf
       model: NETCDF4
@@ -454,6 +468,7 @@ categories:
           - 6570.0
           - 7300.0
           - 8030.0
+      time_bearing_sibling:
   oc_aviation_crs:
     file: ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_oc.aviation_crs.x3600_y1800_t12.2010.nc4
     cadence: monthly
@@ -478,6 +493,7 @@ categories:
           relative_amplitude: 0.3
           peak_month: 7
         vertical:
+        missing_where_masked: false
     layout:
       format: netcdf
       model: NETCDF4
@@ -509,6 +525,7 @@ categories:
           - 6570.0
           - 7300.0
           - 8030.0
+      time_bearing_sibling:
   bc_aviation_crs:
     file: ExtData/PIESA/sfc/HTAP/v2.2/htap-v2.2.emis_bc.aviation_crs.x3600_y1800_t12.2010.nc4
     cadence: monthly
@@ -533,6 +550,7 @@ categories:
           relative_amplitude: 0.3
           peak_month: 7
         vertical:
+        missing_where_masked: false
     layout:
       format: netcdf
       model: NETCDF4
@@ -564,6 +582,7 @@ categories:
           - 6570.0
           - 7300.0
           - 8030.0
+      time_bearing_sibling:
   gmi:
     file: ExtData/PIESA/L127/A2_ACCMIP_gmic_MERRA_oh_h2o2_no3.x144_y91_z127_t14.2021.nc
     cadence: monthly
@@ -589,6 +608,7 @@ categories:
           peak_month: 7
         vertical:
           scale_height_levels: 25.0
+        missing_where_masked: false
       h2o2:
         units: mol/mol
         long_name: H2O2 volume mixing ratio [mol/mol]
@@ -604,6 +624,7 @@ categories:
           peak_month: 7
         vertical:
           scale_height_levels: 25.0
+        missing_where_masked: false
       no3:
         units: mol/mol
         long_name: NO3 volume mixing ratio [mol/mol]
@@ -619,6 +640,7 @@ categories:
           peak_month: 7
         vertical:
           scale_height_levels: 25.0
+        missing_where_masked: false
     layout:
       format: netcdf
       model: NETCDF4_CLASSIC
@@ -779,6 +801,7 @@ categories:
           - 483120.0
           - 527040.0
           - 570960.0
+      time_bearing_sibling:
   dms:
     file: ExtData/MERRA2/sfc/DMSclim_sfcconcentration.x360_y181_t12.Lana2011.nc4
     cadence: monthly
@@ -807,6 +830,7 @@ categories:
           relative_amplitude: 0.3
           peak_month: 7
         vertical:
+        missing_where_masked: false
     layout:
       format: netcdf
       model: NETCDF4
@@ -838,6 +862,7 @@ categories:
           - 6570.0
           - 7300.0
           - 8030.0
+      time_bearing_sibling:
   fengsha:
     file: ExtData/dust/FENGSHA_New_Method_NESDISv1.1_9km.nc
     cadence: monthly
@@ -870,6 +895,7 @@ categories:
           relative_amplitude: 0.3
           peak_month: 7
         vertical:
+        missing_where_masked: false
     layout:
       format: netcdf
       model: NETCDF4
@@ -901,6 +927,7 @@ categories:
           - 6552.0
           - 7296.0
           - 8016.0
+      time_bearing_sibling:
   anthro1:
     file: ExtData/CEDS/v2019/%y4/CEDS.2019.emis.%y4%m2%d2.nc
     cadence: daily
@@ -931,6 +958,7 @@ categories:
         diurnal:
         seasonal:
         vertical:
+        missing_where_masked: false
       OC:
         units: kg/m2/s
         long_name: OC
@@ -951,6 +979,7 @@ categories:
         diurnal:
         seasonal:
         vertical:
+        missing_where_masked: false
       BC:
         units: kg/m2/s
         long_name: BC
@@ -971,6 +1000,7 @@ categories:
         diurnal:
         seasonal:
         vertical:
+        missing_where_masked: false
     layout:
       format: netcdf
       model: NETCDF4_CLASSIC
@@ -987,6 +1017,7 @@ categories:
       lev_values:
       lev_units:
       time_axis:
+      time_bearing_sibling:
   anthro2:
     file: ExtData/CEDS/v2019/%y4/CEDS.2019.emis.%y4%m2%d2.nc
     cadence: daily
@@ -1017,6 +1048,7 @@ categories:
         diurnal:
         seasonal:
         vertical:
+        missing_where_masked: false
       OC_elev:
         units: kg/m2/s
         long_name: OC_elev
@@ -1037,6 +1069,7 @@ categories:
         diurnal:
         seasonal:
         vertical:
+        missing_where_masked: false
       BC_elev:
         units: kg/m2/s
         long_name: BC_elev
@@ -1057,6 +1090,7 @@ categories:
         diurnal:
         seasonal:
         vertical:
+        missing_where_masked: false
     layout:
       format: netcdf
       model: NETCDF4_CLASSIC
@@ -1073,6 +1107,7 @@ categories:
       lev_values:
       lev_units:
       time_axis:
+      time_bearing_sibling:
   ship:
     file: ExtData/CEDS/v2019/%y4/CEDS.2019.emis.%y4%m2%d2.nc
     cadence: daily
@@ -1099,6 +1134,7 @@ categories:
         diurnal:
         seasonal:
         vertical:
+        missing_where_masked: false
       SO4_ship:
         units: kg/m2/s
         long_name: SO4_ship
@@ -1115,6 +1151,7 @@ categories:
         diurnal:
         seasonal:
         vertical:
+        missing_where_masked: false
       OC_ship:
         units: kg/m2/s
         long_name: OC_ship
@@ -1131,6 +1168,7 @@ categories:
         diurnal:
         seasonal:
         vertical:
+        missing_where_masked: false
       BC_ship:
         units: kg/m2/s
         long_name: BC_ship
@@ -1147,6 +1185,7 @@ categories:
         diurnal:
         seasonal:
         vertical:
+        missing_where_masked: false
     layout:
       format: netcdf
       model: NETCDF4_CLASSIC
@@ -1163,6 +1202,7 @@ categories:
       lev_values:
       lev_units:
       time_axis:
+      time_bearing_sibling:
   fire:
     file: ExtData/QFED/%y4/%m2/qfed2.emis_so2.006.%y4%m2%d2.nc4
     cadence: daily
@@ -1193,6 +1233,7 @@ categories:
         diurnal:
         seasonal:
         vertical:
+        missing_where_masked: false
     layout:
       format: netcdf
       model: NETCDF4
@@ -1209,6 +1250,7 @@ categories:
       lev_values:
       lev_units:
       time_axis:
+      time_bearing_sibling:
   bio:
     file: ExtData/MEGAN_OFFLINE_BVOC/v2019-10/%y4/MEGAN.OFFLINE.BIOVOC.%y4.emis.%y4%m2%d2.nc
     cadence: daily
@@ -1239,6 +1281,7 @@ categories:
         diurnal:
         seasonal:
         vertical:
+        missing_where_masked: false
       isoprene:
         units: kg/m2/s
         long_name: isoprene
@@ -1259,6 +1302,7 @@ categories:
         diurnal:
         seasonal:
         vertical:
+        missing_where_masked: false
       mtpa:
         units: kg/m2/s
         long_name: mtpa
@@ -1279,6 +1323,7 @@ categories:
         diurnal:
         seasonal:
         vertical:
+        missing_where_masked: false
       mtpo:
         units: kg/m2/s
         long_name: mtpo
@@ -1299,6 +1344,7 @@ categories:
         diurnal:
         seasonal:
         vertical:
+        missing_where_masked: false
     layout:
       format: netcdf
       model: NETCDF4
@@ -1315,6 +1361,7 @@ categories:
       lev_values:
       lev_units:
       time_axis:
+      time_bearing_sibling:
   volcano:
     file: ExtData/volcanic/so2_volcanic_emissions_Carns.%y4%m2%d2.rc
     cadence: daily
@@ -1341,6 +1388,7 @@ categories:
       lev_values:
       lev_units:
       time_axis:
+      time_bearing_sibling:
   dust:
     file: ExtData/dust/FENGSHA_2022_NESDIS_inputs_10km_v3.2.nc
     cadence: static
@@ -1371,6 +1419,7 @@ categories:
         diurnal:
         seasonal:
         vertical:
+        missing_where_masked: true
       sandfrac:
         units: '-'
         long_name: Fractional Sand Content
@@ -1391,6 +1440,7 @@ categories:
         diurnal:
         seasonal:
         vertical:
+        missing_where_masked: true
       sep:
         units: count
         long_name: Soil Erosion Potential
@@ -1411,6 +1461,7 @@ categories:
         diurnal:
         seasonal:
         vertical:
+        missing_where_masked: false
       uthres:
         units: '-'
         long_name: threshold velocity u*t
@@ -1431,6 +1482,7 @@ categories:
         diurnal:
         seasonal:
         vertical:
+        missing_where_masked: false
     layout:
       format: netcdf
       model: NETCDF4
@@ -1447,6 +1499,22 @@ categories:
       lev_values:
       lev_units:
       time_axis:
+        units: hours since 2018-01-01
+        calendar: standard
+        values:
+          - 0.0
+          - 744.0
+          - 1416.0
+          - 2160.0
+          - 2880.0
+          - 3624.0
+          - 4344.0
+          - 5088.0
+          - 5832.0
+          - 6552.0
+          - 7296.0
+          - 8016.0
+      time_bearing_sibling: albedo_drag
 met:
   surface_pressure_pa: 101325.0
   temperature_equator_k: 300.0

@@ -936,7 +936,7 @@ writes `tools/defaults/manifest_realistic.yaml` (`--headers`, `--catalog`, `--ba
 uv run python -m tools.make_mock_data --resolution C48 --out data/C48_realistic --profile realistic --grid-factor 10
 ```
 
-writes the 20 files under `data/C48_realistic/ExtData/<real relative path>` (its own directory: the analytic set's `manifest.yaml` and `inventories/totals.yaml` under `data/C48` are what the generator and conservation tests read, and the first cloud run of the fixture into `data/C48` overwrote them, failing 14 `ci` tests) (one file per calendar day for daily categories, the CEDS file written once with the ten variables of `anthro1`, `anthro2` and `ship`), copies the volcanic tables from `tools/defaults/extdata/volcanic/`, and records the coarsened grids in `manifest.yaml` (the factor rounds the cell counts and keeps the extent, so 4444 x 2222 becomes 444 x 222 and pole-centred grids keep their polar centres). Measured here: 1.5 s, 20 MB at factor 10. The resolution is the performance lever for the generation and for CECE's ingest: CTest registers `make_mock_data_realistic` (`ci`, factor 10, fixture `mockdata_realistic`), `gen_configs_realistic_refused` (`ci`: `gen_configs.py` on the realistic manifest is exit 2 by name, `hosted import anthro/SO2 is not a variable of the manifest`, until issue #16 teaches the generator the production categories) and `make_mock_data_realistic_c96` (`c96`, factor 5, 0.5°; the real 0.1° sizes are `--grid-factor 1` by hand, about 4.5 GB), all behind `if(EXISTS tools/defaults/manifest_realistic.yaml)` in `tests/mockdata/CMakeLists.txt`.
+writes the 20 files under `data/C48_realistic/ExtData/<real relative path>` (its own directory: the analytic set's `manifest.yaml` and `inventories/totals.yaml` under `data/C48` are what the generator and conservation tests read, and the first cloud run of the fixture into `data/C48` overwrote them, failing 14 `ci` tests) (one file per calendar day for daily categories, the CEDS file written once with the ten variables of `anthro1`, `anthro2` and `ship`), copies the volcanic tables from `tools/defaults/extdata/volcanic/`, and records the coarsened grids in `manifest.yaml` (the factor rounds the cell counts and keeps the extent, so 4444 x 2222 becomes 444 x 222 and pole-centred grids keep their polar centres). Measured here: 1.5 s, 20 MB at factor 10. The resolution is the performance lever for the generation and for CECE's ingest: CTest registers `make_mock_data_realistic` (`ci`, factor 10, fixture `mockdata_realistic`), `gen_configs_realistic` (`ci`, section 16; it replaced `gen_configs_realistic_refused`, which held the generator's refusal of the realistic manifest until issue #18) and `make_mock_data_realistic_c96` (`c96`, factor 5, 0.5°; the real 0.1° sizes are `--grid-factor 1` by hand, about 4.5 GB), all behind `if(EXISTS tools/defaults/manifest_realistic.yaml)` in `tests/mockdata/CMakeLists.txt`.
 
 ### Schema additions (`tools/manifest.py`)
 
@@ -954,3 +954,96 @@ writes the 20 files under `data/C48_realistic/ExtData/<real relative path>` (its
 | `uv run --script tools/extdata_catalog.py --help` (first run, environment build included) | 5.4 s |
 | analytic C48 regeneration (`--profile analytic`) | 3.9 s, content identical to the `develop` tooling |
 | `tools/ci.sh test ci` (cloud builder amd64 node, 2026-11-06) | 27 of 27 passed, 138 s total: `make_mock_data_realistic` 1.9 s, `gen_configs_realistic_refused` 0.3 s, `proto_cece_met_catchem` 53.5 s (unchanged). The first attempt did not start (expired Docker Hub login, `no credentials found for https://index.docker.io/v1/`); the second failed 14 tests because the realistic fixture wrote into `data/C48` and overwrote the analytic manifest and totals, fixed by `data/C48_realistic`; the third is the result here |
+
+## 16. The three components on the realistic set (issue #18)
+
+The task-6 run on the realistic profile: CATChem's 19 production categories at their real relative paths, grids (coarsened ten times), time coordinates, level order, variable names and units; 18 of them gridded, 33 emission imports, two of them hosted by MET. The generator gained a second defaults file, per-file stream timing, inactive categories and the per-run window files of the daily series; nothing changed in CECE or CATChem.
+
+### Commands
+
+```bash
+uv run python -m tools.make_mock_data --resolution C48 --out data/C48_realistic --profile realistic --grid-factor 10
+uv run python -m tools.gen_configs --manifest data/C48_realistic/manifest.yaml --out build/gen/C48_realistic --pets 6 --defaults tools/defaults/gen_configs_realistic.yaml
+```
+
+```bash
+tools/ci.sh test ci -R realistic
+```
+
+By hand inside the image, from an empty run directory: `mpirun -np 6 build/protos/met_catchem/esmApp build/gen/C48_realistic/esm.configure 2>&1 | tee cece_stdout.txt`. Then:
+
+```bash
+uv run python -m tools.check_conservation --expected data/C48_realistic/inventories/totals.yaml --run-dir build/protos/cece_met_catchem/run_C48_realistic_np6 --category anthro1 --variable SO2 --level 1 --zero-above --min-matches 1 --rtol 2e-5
+```
+
+```bash
+uv run python -m tools.check_conservation --expected data/C48_realistic/inventories/totals.yaml --run-dir build/protos/cece_met_catchem/run_C48_realistic_np6 --category dust --variable sep --level 1 --zero-above --min-matches 1 --rtol 3e-3
+```
+
+### The generator defaults (`tools/defaults/gen_configs_realistic.yaml`)
+
+A second parameter set, selected with `--defaults` or `PROTOS_GEN_DEFAULTS`, because the analytic file is digest-pinned and its category set must equal the analytic manifest's. Per production category (from `extern/CATChem/tests/Configs/Default/CATChem_new_config.yml`): `apply_method` (`replace` for `gmi`, `dms`, `dust`, `fengsha`), `vertical_dist` (`P100` for `anthro1` and `ship`, `P500` for `anthro2`, `Ppbl` for `fire`, `aviation_lto|cds|crs` for the nine aviation categories, `none` otherwise), `plume_rise: sofiev` and `scale_factor: 0.7778` for `fire` (new `CategoryDefaults.scale_factor`), and the production emission map (`CATChem_emission.yml`: `biomass -> so2, oc1, oc2, bc1, bc2` with `[1.0, 0.9, 0.9, 0.8, 0.2]`, `SO2 -> so2, so4` with `[0.97, 0.045]`, the `MET_*` targets of the FENGSHA inputs). `volcano` is `inactive: true` (new `CategoryDefaults.inactive`): written to `processes/extemis` as `{activate: false, gridded: false}` next to CATChem's own `point`, no map entry, no import, no CECE stream (CECE has no point path, ufs-community/CECE#167). `hosted_imports` are `anthro1/SO2` and `dust/sep` (not `clayfrac`: it carries fill cells, see below). `time_interpolation` (new `CategoryDefaults.time_interpolation`, default `linear`) is CATChem's key of the same name on its file path: the production config leaves it out, which means `none`, for `anthro1`, `anthro2`, `ship` and `gmi`, and sets `linear` for every other category. `catchem_units` maps the real files' strings (`kg/m2/s`, `kg m-2 s-1`, `kg s-1 m-2`, `mol/mol`, `nmol l-1`, `-`, `count`, `1`) to the four spellings `catchem_emis_apply` converts (`kg/m2/s`, `mol/mol`, `nmol/l`; the `MET_*` inputs bypass the conversion, their `1` is informational). `daily_hold` and `monthly_anchor` are not written: they are absent from the production config and inert on the import path (`catchem_emis_mod.F90:440-500` never enters the file-time bracket under `source: nuopc_import`). A test keeps the shared keys (`prototype`, `verbosity`, `processes`, `diagnostics`, `run_sequence`, `cece_amio`) equal to the analytic file's; `prototype` stays `cece_met_catchem` because it is the esmApp pass line and the log prefix.
+
+### What the generated set does differently
+
+| Change | Why |
+| --- | --- |
+| `cece.yaml`: the daily categories (`anthro1`, `anthro2`, `ship` on CEDS, `fire` on QFED, `bio` on MEGAN) read a window file under `build/gen/C48_realistic/streams/` (`CEDS.2019.emis.nc`, `qfed2.emis_so2.006.nc4`, `MEGAN.OFFLINE.BIOVOC.emis.nc`; the template's name without its date tokens) | CECE's cap path reads one file per stream: `cece_driver_facade.cpp` `BuildStreamConfig` refuses a `file` list longer than one (`the standalone driver reads one file per stream`), the AMIO manifest has a single `path:` and every cache is keyed per file; date tokens are ufs-community/CECE#165 (open). `tools/stream_window.py` joins the per-day files record for record (same names, dtype, `_FillValue`, units, the first file's lon/lat, `time` in hours since the first day's midnight, the source files in a global attribute); the real daily files stay under `ExtData/` |
+| the realistic manifest's clock has `daily_padding_days: 1`: the daily series are written for 2021-03-21 to 24 (four files per template, 26 files in all), the window holds four records | CECE's linear blend needs a record on each side of every step. What CECE does with a day-spaced axis (`time_label: auto`, one WARNING per variable: `is day-spaced with midnight stamps and has no CF bounds, so time_label 'auto' assumes each stamp opens the day it labels`): a midnight stamp labels the day it opens and a noon stamp is the day's centre, so both CEDS/MEGAN (00Z) and QFED (12Z) records are centred at 12Z, the MAPL and CATChem 12Z-knot convention (`catchem_emis_dt_weight`). The linear series (QFED, MEGAN) blend records 1 and 2 (21 and 22 March) at 06Z, read record 2 alone at 12Z, and blend 2 and 3 from 12:12 on, which holds across midnight; the held CEDS series reads record 2 at 06Z and record 3 from midnight; record 4 (24 March) is never needed. The volcanic point tables are copied for the run's two days only (two tables are checked in); the analytic clock keeps 0 |
+| `taxmode: cycle` for the nine HTAP 2010 files, DMS 2011 and the FENGSHA drag 2022; `limit` for GMI | `tools/cece_yaml.py` `stream_timing` decodes a monthly category's explicit time axis: an axis that does not bracket `[start, end]` is a climatology CECE reads by year wrap (`cece_time_indexing.cpp` `find_bracket_impl`: period = span + last interval, about 365 days for a 12-record mid-month axis, so 2021-03-22 resolves between the March and April 2010 records), a bracketing one (GMI, Dec 2020 to Jan 2022) keeps `limit`; the analytic monthly axis (the start year) stays `limit` |
+| `cadence: series`, `taxmode: extend`, `levels: 1` for the timeless FENGSHA soil file | AMIO describes a variable without a time dimension as one record and CECE serves it as `single record` |
+| `mapalgo: nn` for `dust` and `fengsha` | the manifest's `cece_mapalgo` of `neareststod`, now exercised on the host-block path for the first time |
+| `CATChem_new_config.yml`: `reverse_vertical: true` for `gmi` | derived from the manifest's `level_order: top_down`; CATChem's import copy flips a 3-D field when set (`catchem_emis_copy_imports`, `catchem_emis_mod.F90:742`), CECE copies levels in file order; the analytic `gmi` (`bottom_up`) stays `false` |
+| `CATChem_new_config.yml`: `scale_factor: 0.7778`, `plume_rise: sofiev` for `fire`; `volcano` and `point` inactive | the production config |
+| `esm.configure`: two `met_hosted_imports::` rows | the conservation checks of the daily and the timeless path |
+| `cece.yaml`: `tintalgo: nearest` for `anthro1`, `anthro2`, `ship` and `gmi`, `linear` for the rest | CATChem's `time_interpolation` per category: without the key CATChem holds the record of the current period (the production log opened the 22 March CEDS file at 06Z and the 23 March file at midnight, never two at once; GMI is a monthly step). With CECE's `time_label: auto` a midnight-stamped daily record is held for the day it opens, so `nearest` switches at 00Z exactly as CATChem does. Blending them, as the first version did, would differ from `catchem_control` by construction |
+
+### Run directory
+
+`build/protos/cece_met_catchem/run_C48_realistic_np6/`: the PET logs, `met_import_totals.yaml` (two hosted imports) and `cece_stdout.txt`: CECE's per-step stream lines (`[RANK:n] [INFO] [DRIVER] Reading time slice i/n from '<file>' for field '<var>' (<note>, time=<iso>)` and `Interpolating time slices i & j/n (w=<w>) ...`) go to stdout, not to the PET logs, so the run tees them (as the profile run does) and the timing check reads that file.
+
+### Tests
+
+| Test | Label | What |
+| --- | --- | --- |
+| `gen_configs_realistic`, `gen_configs_realistic_cece_valid` | `ci` | the set under `build/gen/C48_realistic` (fixture `genconfigs_realistic`, after `mockdata_realistic`), with `--defaults tools/defaults/gen_configs_realistic.yaml`; CECE's validator on its `cece.yaml` |
+| `proto_cece_met_catchem_realistic` | `ci` | 6 PETs, 120 steps on the realistic set, stdout tee'd to `cece_stdout.txt` |
+| `log_cece_met_catchem_realistic` | `ci` | the PET logs: `RealizeAccepted removed 0`, the 18 per-category `<n> field(s) read from NUOPC imports` lines (3, 3, 4, 1, 4, nine times 1, 3, 1, 4, 1), `33 emission import(s) bound`, `MET: 43 of 43 exports are reference-shared`, 33 distinct `Realized export field ... (48x48x127)`, 33 distinct `ShareStatusField=shared`, both hosted imports shared, no `not shared`, no emission open, no `Unrecognized emission field units`, no `Unrecognized vertical_dist option`, no `DRIVER FATAL`, one Kokkos thread per PET, memory per PET below the ceiling |
+| `timing_cece_met_catchem_realistic` | `ci` | `cece_stdout.txt` (a line per bracket change): the held CEDS window read as record 2 of 4 at 2021-03-22T06:00 and as record 3 at 2021-03-23T00:00, never interpolated; GMI read as record 4 of 14, never interpolated; the QFED window blended between records 1 and 2 (w = 0.75) at 06:00 and, with MEGAN, between 2 and 3 from 12:12; the HTAP 2010, DMS 2011 and FENGSHA 2022 climatologies between records 3 and 4 of 12, all `decoded axis`; `dust_clayfrac` and `dust_sep` as `single record` although their file has a 12-record time axis; no `degraded arithmetic`, no `outside the coverage`, no `DRIVER FATAL` |
+| `growth_cece_met_catchem_realistic` | `ci` | MET's hourly `so2` sum grows |
+| `conservation_cece_met_catchem_realistic_anthro1`, `conservation_cece_met_catchem_realistic_dust` | `ci` | `anthro1/SO2` level 1 at 2021-03-23T00:00 (the one CEDS stamp inside the run, where the held record of 23 March comes into force) at `--rtol 2e-5` (measured 1.513e-5, consd from the coarsened 1° grid) and `dust/sep` level 1 at the first step (the static record's stamp) at `--rtol 3e-3` (measured 2.008e-3: `nn` is not conservative, the check proves the timeless read), levels 2..127 zero, `--min-matches 1`; the analytic run keeps the 24-stamp check at 2e-6 |
+
+`gen_configs_realistic_refused` (section 15) is retired. Every realistic test is registered behind `if(EXISTS tools/defaults/manifest_realistic.yaml)`.
+
+### Measured (2026-11-06, `tools/ci.sh test ci -R realistic` on the cloud builder's amd64 node)
+
+| Quantity | Value |
+| --- | --- |
+| `uv run pytest tools/tests` | 231 passed, coverage 100 % |
+| realistic C48 generation, `--grid-factor 10` (here) | 27 files written (26 inventories plus the land mask; four per daily template), 31 MB with the two volcanic tables |
+| `gen_configs` on the realistic manifest (here) | 10 outputs: the seven files plus the three window files (`CEDS.2019.emis.nc` 10.4 MB, `MEGAN.OFFLINE.BIOVOC.emis.nc` 3.1 MB, `qfed2.emis_so2.006.nc4` 0.8 MB; the classic-model CEDS window is uncompressed) |
+| `proto_cece_met_catchem_realistic` wall time | 76.9 s for 120 steps (the analytic run 53.5 s): 18 streams, 16 data files, 33 exports |
+| memory per PET, max over PETs (physical) | 420 MB after init, 946 MB at the end (ceiling 1.2 GB, as the analytic run's) |
+| conservation, `anthro1/SO2` level 1 at 2021-03-23T00:00 | relative error 1.513e-5 (rtol 2e-5) |
+| conservation, `dust/sep` level 1 at 2021-03-22T06:00 (2026-11-09) | relative error 2.008e-3 (rtol 3e-3; `nn`); the first version hosted `dust/clayfrac`, 6.840e-4 |
+| CECE slice lines in `cece_stdout.txt` | 63 (one per bracket change); 14 `time_label 'auto'` warnings (one per daily variable) |
+| the realistic subset (`-R realistic`, 9 tests) | 9 of 9 passed, 86 s |
+| the whole `ci` label (`tools/ci.sh test ci`, 2026-11-06) | 34 of 34 passed, 222.7 s (budget 10 min); `proto_cece_met_catchem` unchanged |
+
+The first realistic run (2026-11-06) completed and passed its log check at the first attempt; the timing spec was then rewritten to CECE's actual day-centred bracketing (it had assumed midnight-to-midnight brackets) and the two conservation tolerances were set from the measured errors.
+
+### Follow-up after the weather-model comparison (2026-11-09)
+
+Comparing the run with `catchem_control` (same clock, levels, categories and emission map) found three properties of the real files and of CATChem's production config the first version did not reproduce; all three are now in the realistic set.
+
+| Property | What the real side does | What changed here |
+| --- | --- | --- |
+| time interpolation per category | CATChem holds the record of the current period unless the category sets `time_interpolation: linear`; `anthro1`, `anthro2`, `ship` and `gmi` do not | `CategoryDefaults.time_interpolation` (`linear` or `none`), written as CECE's `tintalgo: linear` or `nearest`; the four held categories are `none` in `gen_configs_realistic.yaml` |
+| fill cells | `clayfrac` and `sandfrac` are NaN over 77 % of the real file (the ocean); every other mapped variable has no fill cell | `Variable.missing_where_masked`: the layout's fill value (NaN when it has none) where the category's mask fraction is below the land mask's threshold, instead of zero; the builder sets it when the scraped `fill_fraction` is above zero. The synthetic file has 80 % fill cells at factor 10. Totals skip them. MET hosts `dust/sep` instead of `dust/clayfrac` (a total over NaN is NaN) |
+| the soil file's time axis | the real file has a 12-record time axis (`hours since 2018-01-01`, month starts) and `albedo_drag(time, lat, lon)` next to the timeless soil variables | `FileLayout.time_bearing_sibling`, and `time_axis` allowed with `time_dimension: false`: the synthetic file carries the axis and a sibling on `(time, lat, lon)`; the category's own totals stay one record at the clock start |
+
+What the run showed (2026-11-09, cloud builder): CECE's `nn` regrid passes the fill cells through and neither CECE nor CATChem stops on them (neither masks fills, and CATChem's own regrid reader does not either, so this is parity with production; the prototype runs no dust process, so nothing consumes the values); AMIO reports the timeless variables as one record although their file has twelve, and CECE serves them as `single record`; the held CEDS records switch at 2021-03-23T00:00:00 as in the production log.
+
+Not reproduced, by decision or for lack of a fact: whether the real `ExtData` tree holds the neighbouring days (the production log opened no 21 March file; CATChem falls back to the current day's file when a neighbour is missing, the window step here stops by name); the sentinel 999 in the real `uthres` (it inflates the scraped mean the synthetic background is taken from); GMI's `limit` is right for 2021 only (the production config pins the 2021 file for any year).
+
+Measured for the follow-up (2026-11-09, cloud builder): `uv run pytest tools/tests` 235 passed at 100 % coverage; the realistic run 75.4 s for 120 steps, 935 MB per PET at the end; the whole `ci` label 34 of 34 in 219.3 s.

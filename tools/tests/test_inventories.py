@@ -678,3 +678,103 @@ def test_timeless_static_file_and_real_level_values(tmp_path: Path) -> None:
     wrong = with_layout(manifest, "gmi", layout=mf.FileLayout(lev_values=[1.0, 2.0]))
     with pytest.raises(ValueError, match="lev_values has 2 entries"):
         inv.write_category(wrong, "gmi", None)
+
+
+def test_daily_padding_writes_the_neighbouring_days(tmp_path: Path) -> None:
+    manifest = small_manifest(tmp_path)
+    layout = mf.FileLayout(write_bounds_and_area=False, daily_record_hour=0.0)
+    m = with_layout(
+        manifest,
+        "fire",
+        cadence="daily",
+        file=tmp_path / "ExtData" / "%y4" / "ceds.%y4%m2%d2.nc",
+        layout=layout,
+    )
+    m = m.model_copy(
+        update={"clock": m.clock.model_copy(update={"daily_padding_days": 1})}
+    )
+    totals = inv.generate_inventories(m).categories["fire"]
+    assert [p.name for p in totals.files or []] == [
+        "ceds.20210321.nc",
+        "ceds.20210322.nc",
+        "ceds.20210323.nc",
+        "ceds.20210324.nc",
+    ]
+    assert totals.times == [datetime(2021, 3, d, tzinfo=UTC) for d in (21, 22, 23, 24)]
+    assert len(totals.variables["CO"].records) == 4
+
+
+def test_missing_where_masked_writes_fill_cells(tmp_path: Path) -> None:
+    """The real clay and sand fractions are fill over the ocean (77 % of cells); zeros would hide it from CECE."""
+    manifest = small_manifest(tmp_path)
+    dust = manifest.categories["dust"]
+    variables = dict(dust.variables)
+    variables["clayfrac"] = variables["clayfrac"].model_copy(
+        update={"missing_where_masked": True}
+    )
+    m = with_layout(
+        manifest,
+        "dust",
+        variables=variables,
+        layout=mf.FileLayout(time_dimension=False, write_bounds_and_area=False),
+    )
+    land = inv.land_fraction(m.grids["inventory"], m.land_mask)
+    totals = inv.write_category(m, "dust", land)
+    with netCDF4.Dataset(dust.file) as ds:
+        ds.set_auto_mask(False)
+        clay = ds["clayfrac"][:]
+        sand = ds["sandfrac"][:]
+        assert math.isnan(ds["clayfrac"]._FillValue)
+    ocean = land < m.land_mask.threshold
+    assert ocean.any()
+    assert (~ocean).any()
+    assert np.isnan(clay[ocean]).all()
+    assert np.isfinite(clay[~ocean]).all()
+    assert np.isfinite(sand).all()  # not flagged: zeros where masked, as before
+    assert all(
+        math.isfinite(x) for r in totals.variables["clayfrac"].records for x in r
+    )
+    # with a numeric fill value the cells carry it
+    filled = with_layout(
+        m,
+        "dust",
+        layout=mf.FileLayout(
+            time_dimension=False, write_bounds_and_area=False, fill_value=-1.0e31
+        ),
+    )
+    inv.write_category(filled, "dust", land)
+    with netCDF4.Dataset(dust.file) as ds:
+        ds.set_auto_mask(False)
+        assert (ds["clayfrac"][:][ocean] == np.float32(-1.0e31)).all()
+
+
+def test_timeless_file_with_its_own_time_axis_and_sibling(tmp_path: Path) -> None:
+    """The real soil file has a 12-record time axis and albedo_drag(time, lat, lon) beside its timeless variables."""
+    manifest = small_manifest(tmp_path)
+    axis = mf.ExplicitTimeAxis(
+        units="hours since 2018-01-01", values=[0.0, 744.0, 1416.0]
+    )
+    m = with_layout(
+        manifest,
+        "dust",
+        layout=mf.FileLayout(
+            time_dimension=False,
+            write_bounds_and_area=False,
+            time_axis=axis,
+            time_bearing_sibling="albedo_drag",
+        ),
+    )
+    land = inv.land_fraction(m.grids["inventory"], m.land_mask)
+    totals = inv.write_category(m, "dust", land)
+    # the category's own totals stay one record at the clock start (what the conservation check matches)
+    assert totals.times == [m.clock.start]
+    assert len(totals.variables["clayfrac"].records) == 1
+    assert "albedo_drag" not in totals.variables
+    with netCDF4.Dataset(m.categories["dust"].file) as ds:
+        assert ds.dimensions["time"].size == 3
+        assert ds["time"].units == "hours since 2018-01-01"
+        assert ds["time"][:].tolist() == [0.0, 744.0, 1416.0]
+        assert ds["clayfrac"].dimensions == ("lat", "lon")
+        assert ds["albedo_drag"].dimensions == ("time", "lat", "lon")
+        assert ds["albedo_drag"].shape == (3, 18, 36)
+        np.testing.assert_array_equal(ds["albedo_drag"][1], ds["clayfrac"][:])

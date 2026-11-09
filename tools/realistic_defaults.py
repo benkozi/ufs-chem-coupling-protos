@@ -51,6 +51,9 @@ SOURCE_SIGMA_DEG = 15.0
 # Scraped statistics are rounded to this many significant digits: a 17-digit float does not survive the YAML
 # formatter (yamlfix re-emits floats through ruyaml and moves the last digit), and the data do not carry it.
 SIGNIFICANT_DIGITS = 6
+# Daily series are written for the day before and after the run too (issue #18): CECE's linear blend needs a
+# record on each side of every step, and CATChem's own reader brackets [D-1, D] as well.
+REALISTIC_DAILY_PADDING_DAYS = 1
 
 
 def rounded(value: float) -> float:
@@ -218,6 +221,12 @@ def _variable(
         long_name=str(long_name),
         background=background,
         sources=_sources(masked_by, base, amplitude),
+        # the real field has fill cells (the soil fractions over the ocean): missing, not zero, outside the mask
+        missing_where_masked=(
+            header.stats is not None
+            and header.stats.fill_fraction > 0.0
+            and masked_by != "none"
+        ),
         seasonal=(
             mf.Seasonal(
                 relative_amplitude=SEASONAL_RELATIVE_AMPLITUDE,
@@ -270,12 +279,24 @@ def _layout(
     time_dimension = (
         "time" not in axes or axes["time"].name in category_variable.dimensions
     )
-    if not time_dimension:
-        time_axis = None
     if not time_dimension and category.frequency != "static":
         raise BuildError(
             f"{file.path}: variables without a time dimension in a {category.frequency} category"
         )
+    # A timeless category in a file that has a time axis (the soil inputs beside albedo_drag): the file keeps
+    # its axis and one time-bearing sibling, so CECE meets the real mix of timeless and time-bearing variables.
+    sibling = None
+    if not time_dimension:
+        sibling = next(
+            (
+                name
+                for name, v in file.variables.items()
+                if axes["time"].name in v.dimensions and len(v.dimensions) >= 3
+            ),
+            None,
+        )
+        if sibling is None:
+            time_axis = None
     lev_values = None
     lev_units = None
     if not category.is_2d and "lev" in axes:
@@ -301,6 +322,7 @@ def _layout(
         write_bounds_and_area=False,
         daily_record_hour=record_hour,
         time_axis=time_axis,
+        time_bearing_sibling=sibling,
         time_dimension=time_dimension,
         lev_values=lev_values,
         lev_units=lev_units,
@@ -409,7 +431,9 @@ def build(inputs: Inputs) -> mf.ManifestDefaults:
         )
     return mf.ManifestDefaults(
         earth_radius_m=base.earth_radius_m,
-        clock=base.clock,
+        clock=base.clock.model_copy(
+            update={"daily_padding_days": REALISTIC_DAILY_PADDING_DAYS}
+        ),
         grids=grids,
         land_mask=base.land_mask,
         categories=categories,

@@ -315,3 +315,72 @@ def test_a_unit_without_a_catchem_spelling_is_an_error(
     )
     with pytest.raises(cy.ConfigError, match="kg m-2 s-1"):
         cy.emission_map(manifest, broken)
+
+
+# --- issue #18: the production categories ---------------------------------------------------------------------
+
+
+@pytest.fixture
+def realistic(tmp_path: Path) -> tuple[mf.Manifest, gd.GenDefaults]:
+    manifest = mf.default_manifest(
+        resolution="C48",
+        out_dir=tmp_path / "data" / "C48_realistic",
+        command="test",
+        defaults_file=get_settings().realistic_defaults_file,
+    )
+    defaults = gd.GenDefaults.from_yaml(
+        Path("tools/defaults/gen_configs_realistic.yaml")
+    )
+    return manifest, defaults
+
+
+def test_realistic_science_config(
+    realistic: tuple[mf.Manifest, gd.GenDefaults], tmp_path: Path
+) -> None:
+    manifest, defaults = realistic
+    config = cy.science_config(
+        manifest, defaults, species_file=Path("/s.yml"), emission_file=Path("/e.yml")
+    )
+    doc = yaml.safe_load(yaml.safe_dump(config.to_mapping()))
+    ext = doc["processes"]["extemis"]
+    assert ext["source"] == "nuopc_import"
+    # the file's level order decides the flip CATChem's import copy applies
+    assert ext["gmi"]["reverse_vertical"] is True
+    assert ext["anthro1"]["reverse_vertical"] is False
+    assert ext["fire"]["scale_factor"] == 0.7778
+    assert ext["fire"]["plume_rise"] == "sofiev"
+    assert ext["fire"]["vertical_dist"] == "Ppbl"
+    assert ext["so2_aviation_cds"]["vertical_dist"] == "aviation_cds"
+    assert ext["anthro1"]["frequency"] == "daily"
+    assert ext["dust"]["regrid_method"] == "neareststod"
+    # the point-table category and CATChem's point block are written inactive, without a map entry
+    assert ext["volcano"] == {"activate": False, "gridded": False}
+    assert ext["point"] == {"activate": False, "gridded": False}
+    assert "scale_factor" not in ext["anthro1"] or ext["anthro1"]["scale_factor"] == 1.0
+    path = tmp_path / "CATChem_new_config.yml"
+    config.to_yaml(path)
+    assert cy.ScienceConfig.from_mapping(yaml.safe_load(path.read_text())) == config
+    emap = cy.emission_map(manifest, defaults)
+    assert "volcano" not in emap.categories
+    assert emap.categories["fire"]["biomass"].units == "kg/m2/s"
+    assert emap.categories["dms"]["conc"].units == "nmol/l"
+    assert emap.categories["dust"]["uthres"].units == "1"
+    species = cy.species_names(REPO_ROOT / get_settings().catchem_species_file)
+    cy.check_emission_targets(emap, species)
+    entries = cy.emission_entries(manifest)
+    assert len(entries) == 33
+    assert "extemis_volcano_SO2" not in {e.standard_name for e in entries}
+
+
+def test_an_inactive_category_with_variables_is_an_error(
+    realistic: tuple[mf.Manifest, gd.GenDefaults],
+) -> None:
+    manifest, defaults = realistic
+    broken = defaults.model_copy(deep=True)
+    broken.categories["fire"] = gd.CategoryDefaults(
+        apply_method="add", variables={}, inactive=True
+    )
+    with pytest.raises(cy.ConfigError, match="fire"):
+        cy.science_config(
+            manifest, broken, species_file=Path("/s"), emission_file=Path("/e")
+        )

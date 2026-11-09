@@ -1,5 +1,11 @@
 """The CECE configuration the generator emits: the task-4 multi-tile form, every export nz deep.
 
+Stream timing (issue #18) follows each file's own time coordinate: a daily series is read from the window
+file the generator writes (CECE's cap path reads one file per stream, `cece_driver_facade.cpp` BuildStreamConfig)
+with `taxmode: limit`; a monthly file whose explicit axis does not bracket the run (the 2010 HTAP, 2011 DMS and
+2022 FENGSHA climatologies) wraps by year with `taxmode: cycle`, a bracketing one (GMI, Dec 2020 to Jan 2022)
+keeps `limit`; a static file is one record (`series`/`extend`); a point table has no stream.
+
 One CECE component has one `driver.grid.nz` (its cap realizes every export with that depth and keeps its config
 path in module globals, so there is one instance per executable): `nz` is the manifest's level count, a surface
 category's stream variable declares `levels: 1` (CECE gives a variable without `levels` the grid's nz,
@@ -10,6 +16,7 @@ and is exported level for level without a flip. Stream paths are absolute (CECE 
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Literal
 
@@ -22,7 +29,7 @@ from tools.catchem_yaml import rooted, species_key, standard_name
 from tools.manifest import Strict
 
 StreamCadence = Literal["series", "daily", "monthly"]
-TaxMode = Literal["limit", "extend"]
+TaxMode = Literal["limit", "extend", "cycle"]
 
 
 class DriverGrid(Strict):
@@ -75,11 +82,11 @@ class Stream(Strict):
     cadence: StreamCadence = Field(
         description="series (hourly and static files), daily (one file per day) or monthly."
     )
-    tintalgo: Literal["linear"] = Field(
-        description="Linear time interpolation between records."
+    tintalgo: Literal["linear", "nearest"] = Field(
+        description="linear blends the two bracketing records; nearest holds one (CATChem's time_interpolation none: with CECE's time_label auto a midnight-stamped daily record is held for its day)."
     )
     taxmode: TaxMode = Field(
-        description="limit (fail outside the axis) or extend (a single static record)."
+        description="limit (fail outside the axis), extend (a single static record) or cycle (a climatology read by year wrap)."
     )
     mapalgo: str = Field(
         description="The manifest's cece_mapalgo (consd, bilinear, passthrough)."
@@ -133,17 +140,43 @@ class CeceConfig(Strict):
         )
 
 
-def stream_timing(cadence: mf.Cadence) -> tuple[StreamCadence, TaxMode]:
-    """CATChem cadence -> CECE stream cadence and axis mode (task-2 audit of CECE's cadences)."""
+def axis_brackets(axis: mf.ExplicitTimeAxis, clock: mf.Clock) -> bool:
+    """Whether the file's own records enclose the run (first record at or before the start, last at or after the end)."""
+    stamps = axis.stamps()
+    return stamps[0] <= clock.start and stamps[-1] >= clock.end
+
+
+def stream_timing(
+    category: mf.Category, clock: mf.Clock
+) -> tuple[StreamCadence, TaxMode]:
+    """CATChem cadence and the file's time axis -> CECE stream cadence and axis mode (the table in the module docstring)."""
+    cadence = category.cadence
     if cadence == "hourly":
         return "series", "limit"
     if cadence == "daily":
         return "daily", "limit"
     if cadence == "monthly":
+        axis = category.layout.time_axis if category.layout is not None else None
+        if axis is not None and not axis_brackets(axis, clock):
+            return "monthly", "cycle"
         return "monthly", "limit"
     if cadence == "static":
         return "series", "extend"
     raise ValueError(f"unknown cadence {cadence!r}")
+
+
+def stream_file(
+    name: str, category: mf.Category, data_root: Path, windows: Mapping[Path, Path]
+) -> Path:
+    """The one file CECE reads for the category: the generator's window file for a daily series, else the inventory."""
+    if category.cadence != "daily":
+        return rooted(category.file, data_root)
+    window = windows.get(category.file)
+    if window is None:
+        raise ValueError(
+            f"daily category {name!r} has no window file for {category.file} (CECE reads one file per stream)"
+        )
+    return window
 
 
 def cece_config(
@@ -151,18 +184,25 @@ def cece_config(
     data_root: Path,
     amio: gd.CeceAmio,
     omit: frozenset[tuple[str, str]] = frozenset(),
+    windows: Mapping[Path, Path] | None = None,
+    time_interpolation: Mapping[str, gd.TimeInterpolation] | None = None,
 ) -> CeceConfig:
     """The CECE YAML for the manifest; `omit` (category, variable) pairs are neither read nor exported.
 
     `omit` exists for the unconnected-import failure case (gen_configs --cece-omit): CATChem still advertises
-    the field, CECE does not provide it. A category with every variable omitted has no stream.
+    the field, CECE does not provide it. A category with every variable omitted has no stream, nor has a point
+    table. `windows` maps a daily category's token template to the window file the generator wrote;
+    `time_interpolation` maps a category to CATChem's linear or none (default linear).
     """
+    interpolation = time_interpolation or {}
     nz = manifest.clock.n_levels
     streams: list[Stream] = []
     species: dict[str, list[SpeciesLayer]] = {}
     exports: dict[str, ExportField] = {}
     for name, category in manifest.categories.items():
-        stream_cadence, taxmode = stream_timing(category.cadence)
+        if category.is_point_table:
+            continue
+        stream_cadence, taxmode = stream_timing(category, manifest.clock)
         variables = [
             StreamVariable(
                 file=variable,
@@ -177,9 +217,9 @@ def cece_config(
         streams.append(
             Stream(
                 name=name,
-                file=str(rooted(category.file, data_root)),
+                file=str(stream_file(name, category, data_root, windows or {})),
                 cadence=stream_cadence,
-                tintalgo="linear",
+                tintalgo="nearest" if interpolation.get(name) == "none" else "linear",
                 taxmode=taxmode,
                 mapalgo=category.cece_mapalgo or "consd",
                 variables=variables,

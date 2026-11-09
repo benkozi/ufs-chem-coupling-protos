@@ -52,23 +52,6 @@ if(EXISTS ${PROJECT_SOURCE_DIR}/tools/defaults/manifest_realistic.yaml)
       TIMEOUT 900
   )
 
-  # Until issue #16 teaches the generator's defaults the production categories, gen_configs refuses the
-  # realistic manifest by name; this test retires with #16.
-  add_test(
-    NAME gen_configs_realistic_refused
-    COMMAND ${UV_EXECUTABLE} run --no-sync python -m tools.gen_configs --manifest data/C48_realistic/manifest.yaml
-            --out build/gen/C48_realistic --pets 6
-    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
-  )
-  set_tests_properties(
-    gen_configs_realistic_refused
-    PROPERTIES
-      FIXTURES_REQUIRED mockdata_realistic
-      PASS_REGULAR_EXPRESSION "is not a variable of the manifest|the defaults do not know"
-      LABELS ci
-      TIMEOUT 120
-  )
-
   add_test(
     NAME make_mock_data_realistic_c96
     COMMAND ${UV_EXECUTABLE} run --no-sync python -m tools.make_mock_data --resolution C96 --out data/C96_realistic
