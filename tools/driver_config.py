@@ -168,6 +168,18 @@ class DriverConfig(Strict):
             raise ValueError(
                 f"components {self.components}: list ATM before CECE (CECE's grid comes from ATM's tracer field)"
             )
+        # ATM has the weather model's two run phases and no default one: phase1 fills its exports before the
+        # chemistry, phase2 reads what the other components produced in the step.
+        if "ATM" in self.components:
+            atm_lines = [
+                line
+                for line in self.run_sequence
+                if line.split()[0] == "ATM" and "->" not in line
+            ]
+            if atm_lines != ["ATM phase1", "ATM phase2"]:
+                raise ValueError(
+                    f"run_sequence runs ATM as {atm_lines}; it must name `ATM phase1` and then `ATM phase2`, once each"
+                )
         return self
 
     def render(self) -> str:

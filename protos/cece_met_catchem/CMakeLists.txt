@@ -73,6 +73,9 @@ require \[Cap\] grid source: host field ATM/inst_tracer_mass_frac \(tileCount=6,
 require \[Cap\] Host grid block: .* \(48x48\), corners 49x49
 forbid \[Cap\] Parent grid:
 forbid \[Cap\] No parent grid or mesh
+require MET: run phase phase1 \(exports filled\) first entered at 2021-03-22T06:00:00
+require MET: run phase phase2 \(tracers taken, hosted imports totalled\) first entered at 2021-03-22T06:00:00
+forbid MET: no default run phase
 require \[Cap\] Kokkos OpenMP threads from the ESMF VM: 1 PE\(s\) on this PET
 below 1200000 cece_met_catchem: memory per PET max virt [0-9]+ KB phys ([0-9]+) KB \(at end\)
 ]=]
@@ -389,6 +392,9 @@ require \[Cap\] grid source: host field ATM/inst_tracer_mass_frac \(tileCount=6,
 require \[Cap\] Host grid block: .* \(48x48\), corners 49x49
 forbid \[Cap\] Parent grid:
 forbid \[Cap\] No parent grid or mesh
+require MET: run phase phase1 \(exports filled\) first entered at 2021-03-22T06:00:00
+require MET: run phase phase2 \(tracers taken, hosted imports totalled\) first entered at 2021-03-22T06:00:00
+forbid MET: no default run phase
 require \[Cap\] Kokkos OpenMP threads from the ESMF VM: 1 PE\(s\) on this PET
 below 1200000 cece_met_catchem: memory per PET max virt [0-9]+ KB phys ([0-9]+) KB \(at end\)
 ]=]

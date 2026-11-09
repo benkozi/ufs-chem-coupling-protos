@@ -35,12 +35,13 @@ def driver(**overrides: object) -> dc.DriverConfig:
         "cece_config_file": Path("/out/cece.yaml"),
         "step_seconds": 720,
         "run_sequence": [
+            "ATM phase1",
             "CECE",
-            "ATM",
-            "CECE -> CHM",
             "ATM -> CHM",
+            "CECE -> CHM",
             "CHM",
             "CHM -> ATM",
+            "ATM phase2",
         ],
     }
     return dc.DriverConfig.model_validate(base | overrides)
@@ -76,7 +77,7 @@ def test_rendered_driver_config(tmp_path: Path) -> None:
     assert "regdecomp_per_tile" not in text
     assert "met_hosted_imports" not in text
     assert (
-        "runSeq::\n  @720\n    CECE\n    ATM\n    CECE -> CHM\n    ATM -> CHM\n    CHM\n    CHM -> ATM\n  @\n::\n"
+        "runSeq::\n  @720\n    ATM phase1\n    CECE\n    ATM -> CHM\n    CECE -> CHM\n    CHM\n    CHM -> ATM\n    ATM phase2\n  @\n::\n"
         in text
     )
     path = tmp_path / "esm.configure"
@@ -182,3 +183,13 @@ def test_labels_are_the_weather_models() -> None:
     for old in ("MET", "CATCHEM"):
         with pytest.raises(pydantic.ValidationError, match="unknown components"):
             driver(components=["ATM", old])
+
+
+def test_atm_runs_as_two_phases_or_not_at_all() -> None:
+    # the provider has the weather model's run phases; a bare `ATM` line names a phase it does not have
+    with pytest.raises(pydantic.ValidationError, match="ATM phase1"):
+        driver(run_sequence=["ATM", "ATM -> CHM", "CHM", "CHM -> ATM"])
+    with pytest.raises(pydantic.ValidationError, match="ATM phase1"):
+        driver(run_sequence=["ATM phase1", "ATM -> CHM", "CHM", "CHM -> ATM"])
+    with pytest.raises(pydantic.ValidationError, match="ATM phase1"):
+        driver(run_sequence=["ATM phase2", "CHM", "ATM phase1"])

@@ -25,13 +25,14 @@ diagnostics:
     - seas4
     - seas5
 run_sequence:
+  - ATM phase1
   - CECE
-  - CECE -> ATM
-  - ATM
-  - CECE -> CHM
   - ATM -> CHM
+  - CECE -> CHM
   - CHM
   - CHM -> ATM
+  - CECE -> ATM
+  - ATM phase2
 # MET also consumes these CECE exports (met_hosted_imports::) and writes their per-level totals to
 # met_import_totals.yaml; the conservation check compares level 1 with the inventory totals (task 6).
 hosted_imports:

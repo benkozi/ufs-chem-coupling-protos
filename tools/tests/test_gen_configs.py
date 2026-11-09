@@ -69,7 +69,8 @@ def test_success_writes_the_seven_files(manifest_file: Path, tmp_path: Path) -> 
         "met_hosted_imports::\n  extemis_anthro_SO2 anthro SO2 "
         f"{tmp_path / 'data/C48/inventories/anthro.nc'}\n::\n"
     ) in driver
-    assert "    CECE\n    CECE -> ATM\n    ATM\n" in driver
+    assert "    ATM phase1\n    CECE\n    ATM -> CHM\n" in driver
+    assert "    CECE -> ATM\n    ATM phase2\n  @\n" in driver
     assert "EARTH_component_list: ATM CHM CECE\n" in driver
     # NUOPC's `high` Verbosity dumps every import on every Run (56 MB per PET log in 24 h at C48)
     assert "Verbosity = low\n" in driver

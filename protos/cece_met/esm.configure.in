@@ -44,11 +44,13 @@ grid_source: mosaic
 # path needs one DE per tile (a closed corner ring), so the task-4 runs use 6 PETs.
 # regdecomp_per_tile: 1 1
 
-# One outer loop at the manifest's coupling step; CECE first, stamping its export at step start.
+# One outer loop at the manifest's coupling step, in the ufs-weather-model's order: ATM phase1, then CECE
+# (stamping its export at step start), then ATM phase2, which totals the hosted import of this step.
 runSeq::
   @@STEP_SECONDS@
+    ATM phase1
     CECE
     CECE -> ATM
-    ATM
+    ATM phase2
   @
 ::

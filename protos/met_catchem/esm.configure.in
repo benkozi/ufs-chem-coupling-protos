@@ -35,12 +35,14 @@ grid_source: @GRID_SOURCE@
 # 192 PETs uses 4 8.
 # regdecomp_per_tile: 4 8
 
-# One outer loop at the manifest's coupling step; providers first, stamping at step start.
+# One outer loop at the manifest's coupling step: the sequence of the ufs-weather-model's
+# ufs.configure.atmaero.IN. ATM phase1 fills the exports (stamped at step start), ATM phase2 takes CHM's tracers.
 runSeq::
   @@STEP_SECONDS@
-    ATM
+    ATM phase1
     ATM -> CHM
     CHM
     CHM -> ATM
+    ATM phase2
   @
 ::
