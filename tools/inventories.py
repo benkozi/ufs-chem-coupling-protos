@@ -15,9 +15,8 @@ import itertools
 import shutil
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import Literal, cast
+from typing import Literal
 
-import netCDF4
 import numpy as np
 import xarray as xr
 from numpy.typing import NDArray
@@ -302,22 +301,8 @@ def _cf_date(when: datetime) -> str:
 
 
 def _days(clock: mf.Clock) -> list[date]:
-    """The calendar days (UTC) a run touches, in order."""
-    first = clock.start.astimezone(UTC).date()
-    last = (clock.end - timedelta(microseconds=1)).astimezone(UTC).date()
-    return [first + timedelta(days=i) for i in range((last - first).days + 1)]
-
-
-def _decode(values: list[float], units: str, calendar: str) -> list[datetime]:
-    decoded = netCDF4.num2date(
-        np.asarray(values, dtype=np.float64),
-        units=units,
-        calendar=calendar,
-        only_use_cftime_datetimes=False,
-        only_use_python_datetimes=True,
-    )
-    dates = decoded if isinstance(decoded, np.ndarray) else np.array([decoded])
-    return [d.replace(tzinfo=UTC) for d in cast(list[datetime], dates.ravel().tolist())]
+    """The calendar days (UTC) a run touches, padded by the clock's daily_padding_days, in order."""
+    return clock.calendar_days()
 
 
 def explicit_time_axis(cadence: mf.Cadence, axis: mf.ExplicitTimeAxis) -> TimeAxis:
@@ -338,7 +323,7 @@ def explicit_time_axis(cadence: mf.Cadence, axis: mf.ExplicitTimeAxis) -> TimeAx
         bounds=list(itertools.pairwise(edges)),
         units=axis.units,
         calendar=axis.calendar,
-        stamps=_decode(values, axis.units, axis.calendar),
+        stamps=axis.stamps(),
     )
 
 

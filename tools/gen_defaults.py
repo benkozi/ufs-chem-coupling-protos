@@ -50,9 +50,23 @@ class CategoryDefaults(Strict):
     diagnostics: bool = Field(
         default=False, description="CATChem per-category diagnostics switch."
     )
+    scale_factor: float = Field(
+        default=1.0,
+        description="CATChem scale_factor of the category (the production config scales fire by 0.7778).",
+    )
+    inactive: bool = Field(
+        default=False,
+        description="Write the category to processes/extemis with activate: false and no map entry or import (the volcanic point table: CECE has no point path); the manifest category must have no variables.",
+    )
     variables: dict[str, EmissionMapVariable] = Field(
         description="Emission map entries by file variable name (the manifest's variable names)."
     )
+
+    @model_validator(mode="after")
+    def _inactive_has_no_variables(self) -> CategoryDefaults:
+        if self.inactive and self.variables:
+            raise ValueError("an inactive category has no emission map variables")
+        return self
 
 
 class DiagnosticsDefaults(Strict):

@@ -29,6 +29,7 @@ from tools import driver_config as dc
 from tools import gen_defaults as gd
 from tools import log
 from tools import manifest as mf
+from tools import stream_window as sw
 from tools.manifest import Strict
 from tools.settings import LogLevel, get_settings
 
@@ -134,6 +135,32 @@ def omitted_pairs(
     return frozenset(pairs)
 
 
+def write_windows(
+    manifest: mf.Manifest, data_root: Path, out: Path
+) -> dict[Path, sw.WindowRecord]:
+    """One window file per daily template (shared by the categories that name it) under <out>/streams/, by template."""
+    names: dict[str, Path] = {}
+    for template, categories in manifest.categories_by_file().items():
+        first = manifest.categories[categories[0]]
+        if first.cadence != "daily" or first.is_point_table:
+            continue
+        name = sw.window_name(template)
+        if name in names:
+            raise UsageError(
+                f"daily templates {names[name]} and {template} would share the window file name {name!r}"
+            )
+        names[name] = template
+    windows: dict[Path, sw.WindowRecord] = {}
+    for name, template in names.items():
+        first = manifest.categories[manifest.categories_by_file()[template][0]]
+        files = [cy.rooted(f, data_root) for f in first.files_for(manifest.clock)]
+        try:
+            windows[template] = sw.write_window(files, out / "streams" / name)
+        except sw.WindowError as exc:
+            raise UsageError(str(exc)) from exc
+    return windows
+
+
 def generate(
     *,
     manifest_path: Path,
@@ -184,7 +211,14 @@ def generate(
         "mapping": out / settings.catchem_mapping_filename,
         "driver": out / settings.driver_config_filename,
     }
-    cz.cece_config(manifest, data_root, defaults.cece_amio, omit).to_yaml(paths["cece"])
+    windows = write_windows(manifest, data_root, out)
+    cz.cece_config(
+        manifest,
+        data_root,
+        defaults.cece_amio,
+        omit,
+        windows={t: w.path for t, w in windows.items()},
+    ).to_yaml(paths["cece"])
     dc.with_emission_entries(base_dictionary, manifest).to_yaml(paths["dictionary"])
     cy.science_config(
         manifest,
@@ -228,6 +262,7 @@ def generate(
         pets=pets,
         regdecomp=regdecomp,
         outputs={p.name: p for p in paths.values()}
+        | {f"streams/{w.path.name}": w.path for w in windows.values()}
         | {settings.gen_record_filename: out / settings.gen_record_filename},
         command=command,
         generated_at=datetime.now(tz=UTC),

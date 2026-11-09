@@ -51,6 +51,9 @@ SOURCE_SIGMA_DEG = 15.0
 # Scraped statistics are rounded to this many significant digits: a 17-digit float does not survive the YAML
 # formatter (yamlfix re-emits floats through ruyaml and moves the last digit), and the data do not carry it.
 SIGNIFICANT_DIGITS = 6
+# Daily series are written for the day before and after the run too (issue #18): CECE's linear blend needs a
+# record on each side of every step, and CATChem's own reader brackets [D-1, D] as well.
+REALISTIC_DAILY_PADDING_DAYS = 1
 
 
 def rounded(value: float) -> float:
@@ -409,7 +412,9 @@ def build(inputs: Inputs) -> mf.ManifestDefaults:
         )
     return mf.ManifestDefaults(
         earth_radius_m=base.earth_radius_m,
-        clock=base.clock,
+        clock=base.clock.model_copy(
+            update={"daily_padding_days": REALISTIC_DAILY_PADDING_DAYS}
+        ),
         grids=grids,
         land_mask=base.land_mask,
         categories=categories,

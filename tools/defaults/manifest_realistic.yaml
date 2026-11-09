@@ -4,6 +4,7 @@ clock:
   duration_hours: 24
   step_seconds: 720
   n_levels: 127
+  daily_padding_days: 1
 grids:
   inventory:
     dlon: 1.0

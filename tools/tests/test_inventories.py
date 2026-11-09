@@ -678,3 +678,27 @@ def test_timeless_static_file_and_real_level_values(tmp_path: Path) -> None:
     wrong = with_layout(manifest, "gmi", layout=mf.FileLayout(lev_values=[1.0, 2.0]))
     with pytest.raises(ValueError, match="lev_values has 2 entries"):
         inv.write_category(wrong, "gmi", None)
+
+
+def test_daily_padding_writes_the_neighbouring_days(tmp_path: Path) -> None:
+    manifest = small_manifest(tmp_path)
+    layout = mf.FileLayout(write_bounds_and_area=False, daily_record_hour=0.0)
+    m = with_layout(
+        manifest,
+        "fire",
+        cadence="daily",
+        file=tmp_path / "ExtData" / "%y4" / "ceds.%y4%m2%d2.nc",
+        layout=layout,
+    )
+    m = m.model_copy(
+        update={"clock": m.clock.model_copy(update={"daily_padding_days": 1})}
+    )
+    totals = inv.generate_inventories(m).categories["fire"]
+    assert [p.name for p in totals.files or []] == [
+        "ceds.20210321.nc",
+        "ceds.20210322.nc",
+        "ceds.20210323.nc",
+        "ceds.20210324.nc",
+    ]
+    assert totals.times == [datetime(2021, 3, d, tzinfo=UTC) for d in (21, 22, 23, 24)]
+    assert len(totals.variables["CO"].records) == 4

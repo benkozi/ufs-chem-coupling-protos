@@ -311,3 +311,169 @@ set_tests_properties(
   profile_kokkos_cece_met_catchem
   PROPERTIES FIXTURES_REQUIRED cece_met_catchem_profile_run LABELS profile TIMEOUT 60
 )
+
+# Issue #18: the same three components on the realistic set (CATChem's 19 production categories at their real
+# paths, grids, time axes and units, coarsened ten times; 33 emission imports, two hosted by MET). The run
+# directory and config path follow from the res name C48_realistic. Registered only with the realistic defaults.
+# CECE's per-step stream lines ([DRIVER] Reading/Interpolating time slice ...) go to stdout, not to the PET
+# logs, so the run tees its stdout into cece_stdout.txt in the run directory (as the profile run does) and the
+# timing check reads that file.
+if(EXISTS ${PROJECT_SOURCE_DIR}/tools/defaults/manifest_realistic.yaml)
+  set(_run_realistic ${CMAKE_CURRENT_BINARY_DIR}/run_C48_realistic_np6)
+  file(MAKE_DIRECTORY ${_run_realistic})
+  add_test(
+    NAME proto_cece_met_catchem_realistic
+    COMMAND
+      bash -c "set -o pipefail; \"$0\" \"$@\" 2>&1 | tee cece_stdout.txt" ${MPIEXEC_EXECUTABLE}
+      ${MPIEXEC_NUMPROC_FLAG} 6 ${MPIEXEC_PREFLAGS} $<TARGET_FILE:esmApp>
+      ${PROJECT_BINARY_DIR}/gen/C48_realistic/esm.configure
+    WORKING_DIRECTORY ${_run_realistic}
+  )
+  set_tests_properties(
+    proto_cece_met_catchem_realistic
+    PROPERTIES
+      FIXTURES_REQUIRED "mockdata_realistic;genconfigs_realistic"
+      FIXTURES_SETUP cece_met_catchem_realistic_run
+      LABELS ci
+      ENVIRONMENT_MODIFICATION "OMP_NUM_THREADS=unset:"
+      PASS_REGULAR_EXPRESSION "cece_met_catchem: completed 120 steps"
+      TIMEOUT 600
+  )
+
+  # The PET-log evidence: every one of the 33 imports connected, bound and reference-shared, every one of the 18
+  # gridded categories import-fed, both hosted imports shared, no emission file opened, every unit and vertical
+  # distribution recognised by CATChem, no CECE fatal, and the memory ceiling (33 nz-deep exports, 16 data files).
+  file(
+    WRITE ${CMAKE_CURRENT_BINARY_DIR}/log_cece_met_catchem_realistic.spec
+    [=[
+require CATChem: RealizeAccepted removed 0 unconnected optional import\(s\)
+require CATChem: category anthro1: 3 field\(s\) read from NUOPC imports
+require CATChem: category anthro2: 3 field\(s\) read from NUOPC imports
+require CATChem: category ship: 4 field\(s\) read from NUOPC imports
+require CATChem: category fire: 1 field\(s\) read from NUOPC imports
+require CATChem: category bio: 4 field\(s\) read from NUOPC imports
+require CATChem: category so2_aviation_lto: 1 field\(s\) read from NUOPC imports
+require CATChem: category oc_aviation_lto: 1 field\(s\) read from NUOPC imports
+require CATChem: category bc_aviation_lto: 1 field\(s\) read from NUOPC imports
+require CATChem: category so2_aviation_cds: 1 field\(s\) read from NUOPC imports
+require CATChem: category oc_aviation_cds: 1 field\(s\) read from NUOPC imports
+require CATChem: category bc_aviation_cds: 1 field\(s\) read from NUOPC imports
+require CATChem: category so2_aviation_crs: 1 field\(s\) read from NUOPC imports
+require CATChem: category oc_aviation_crs: 1 field\(s\) read from NUOPC imports
+require CATChem: category bc_aviation_crs: 1 field\(s\) read from NUOPC imports
+require CATChem: category gmi: 3 field\(s\) read from NUOPC imports
+require CATChem: category dms: 1 field\(s\) read from NUOPC imports
+require CATChem: category dust: 4 field\(s\) read from NUOPC imports
+require CATChem: category fengsha: 1 field\(s\) read from NUOPC imports
+require CATChem: 33 emission import\(s\) bound to emission fields
+require MET: 43 of 43 exports are reference-shared
+count 33 Realized export field "[a-z0-9_]+_[A-Za-z0-9_]+" \(48x48x127\)
+count 33 CATChem: emission import extemis_[a-z0-9_]+_[A-Za-z0-9_]+ ShareStatusField=shared
+forbid ShareStatusField=not shared
+forbid Removed unconnected export field
+forbid owns an open corner ring
+require catchem_emis_init: extemis source=nuopc_import
+require catchem_emis_update: Emission data updated
+forbid CATChem: emission open category=
+forbid AQMIO: open iomode=read path=
+require MET: hosted import extemis_anthro1_SO2 ShareStatusField=shared
+require MET: hosted import extemis_dust_clayfrac ShareStatusField=shared
+forbid Unrecognized emission field units
+forbid Unrecognized vertical_dist option
+forbid DRIVER FATAL
+require \[Cap\] Kokkos OpenMP threads from the ESMF VM: 1 PE\(s\) on this PET
+below 1200000 cece_met_catchem: memory per PET max virt [0-9]+ KB phys ([0-9]+) KB \(at end\)
+]=]
+  )
+  add_test(
+    NAME log_cece_met_catchem_realistic
+    COMMAND
+      ${CMAKE_COMMAND} -DRUN_DIR=${_run_realistic}
+      -DSPEC=${CMAKE_CURRENT_BINARY_DIR}/log_cece_met_catchem_realistic.spec -P ${_log_check}
+  )
+  set_tests_properties(
+    log_cece_met_catchem_realistic
+    PROPERTIES FIXTURES_REQUIRED cece_met_catchem_realistic_run LABELS ci TIMEOUT 120
+  )
+
+  # Stream timing, on CECE's per-step slice lines (logged when a stream's bracket changes). CECE's time_label
+  # 'auto' centres a day-spaced record on its day (a midnight stamp opens the day it labels, a noon stamp is
+  # the centre), the MAPL/CATChem 12Z-knot convention: the four-record windows (21 to 24 March) blend records
+  # 1 and 2 at 06Z, read record 2 alone at 12Z and blend 2 and 3 from 12:12 on, which holds across midnight
+  # (no later line, and record 4 is never needed); the 2010 HTAP climatology is read by year wrap onto its
+  # March/April records and GMI inside its own axis ("decoded axis", never the arithmetic fallback); the
+  # timeless soil file is one record. Every axis decodes and no stream runs out of coverage.
+  file(
+    WRITE ${CMAKE_CURRENT_BINARY_DIR}/timing_cece_met_catchem_realistic.spec
+    [=[
+require \[DRIVER\] Interpolating time slices 1 & 2/4 \(w=0\.75[0-9]*\) from '.*streams/CEDS\.2019\.emis\.nc' for field 'anthro1_SO2' \(decoded axis, .*time=2021-03-22T06:00:00
+require \[DRIVER\] Reading time slice 2/4 from '.*streams/CEDS\.2019\.emis\.nc' for field 'anthro1_SO2' \(decoded axis, time=2021-03-22T12:00:00
+require \[DRIVER\] Interpolating time slices 2 & 3/4 .*streams/CEDS\.2019\.emis\.nc' for field 'anthro1_SO2' \(decoded axis, .*time=2021-03-22T12:12:00
+forbid \[DRIVER\] Interpolating time slices 3 & 4/4 .*streams/CEDS\.2019\.emis\.nc'
+require \[DRIVER\] Interpolating time slices 2 & 3/4 .*streams/qfed2\.emis_so2\.006\.nc4' for field 'fire_biomass' \(decoded axis, .*time=2021-03-22T12:12:00
+require \[DRIVER\] Interpolating time slices 2 & 3/4 .*streams/MEGAN\.OFFLINE\.BIOVOC\.emis\.nc' for field 'bio_isoprene' \(decoded axis
+require \[DRIVER\] Interpolating time slices 3 & 4/12 .*htap-v2\.2\.emis_so2\.aviation_lto.*' for field 'so2_aviation_lto_so2_aviation' \(decoded axis
+require \[DRIVER\] Interpolating time slices 3 & 4/12 .*DMSclim_sfcconcentration.*' for field 'dms_conc' \(decoded axis
+require \[DRIVER\] Interpolating time slices 3 & 4/12 .*FENGSHA_New_Method_NESDISv1\.1_9km\.nc' for field 'fengsha_PC' \(decoded axis
+require \[DRIVER\] Interpolating time slices 4 & 5/14 .*A2_ACCMIP_gmic_MERRA.*' for field 'gmi_oh' \(decoded axis
+require \[DRIVER\] Reading time slice 1/1 from '.*FENGSHA_2022_NESDIS_inputs_10km_v3\.2\.nc' for field 'dust_clayfrac' \(single record
+forbid degraded arithmetic
+forbid outside the coverage
+forbid DRIVER FATAL
+]=]
+  )
+  add_test(
+    NAME timing_cece_met_catchem_realistic
+    COMMAND
+      ${CMAKE_COMMAND} -DRUN_DIR=${_run_realistic} -DFILES=cece_stdout.txt
+      -DSPEC=${CMAKE_CURRENT_BINARY_DIR}/timing_cece_met_catchem_realistic.spec -P ${_log_check}
+  )
+  set_tests_properties(
+    timing_cece_met_catchem_realistic
+    PROPERTIES FIXTURES_REQUIRED cece_met_catchem_realistic_run LABELS ci TIMEOUT 120
+  )
+
+  file(
+    WRITE ${CMAKE_CURRENT_BINARY_DIR}/growth_cece_met_catchem_realistic.spec
+    [=[
+grow MET: tracer so2 area-weighted sum ([-+0-9.E]+) at
+]=]
+  )
+  add_test(
+    NAME growth_cece_met_catchem_realistic
+    COMMAND
+      ${CMAKE_COMMAND} -DRUN_DIR=${_run_realistic}
+      -DSPEC=${CMAKE_CURRENT_BINARY_DIR}/growth_cece_met_catchem_realistic.spec -P ${_log_check}
+  )
+  set_tests_properties(
+    growth_cece_met_catchem_realistic
+    PROPERTIES FIXTURES_REQUIRED cece_met_catchem_realistic_run LABELS ci TIMEOUT 120
+  )
+
+  # Conservation on the two hosted imports. A daily or static inventory has one record stamp inside the run
+  # (CEDS 2021-03-23T00Z: CECE blends the 22 and 23 March records half and half there, and the realistic daily
+  # records carry no cycle, so the blend equals the record; the soil file's single record at the clock start),
+  # so --min-matches 1; the analytic run keeps the 24-stamp check. Tolerances are the measured errors rounded
+  # up (2026-11-06, cloud builder): consd from the coarsened 1 deg CEDS grid 1.513e-5; nn from the 1 deg soil
+  # grid 6.840e-4 (nearest-neighbour is not conservative: this check proves the timeless read, not the physics).
+  set(_checker_realistic ${UV_EXECUTABLE} run --no-sync python -m tools.check_conservation
+      --expected ${PROJECT_SOURCE_DIR}/data/C48_realistic/inventories/totals.yaml
+      --run-dir ${_run_realistic} --level 1 --zero-above --min-matches 1)
+  add_test(
+    NAME conservation_cece_met_catchem_realistic_anthro1
+    COMMAND ${_checker_realistic} --category anthro1 --variable SO2 --rtol 2e-5
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+  )
+  add_test(
+    NAME conservation_cece_met_catchem_realistic_dust
+    COMMAND ${_checker_realistic} --category dust --variable clayfrac --rtol 1e-3
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+  )
+  set_tests_properties(
+    conservation_cece_met_catchem_realistic_anthro1 conservation_cece_met_catchem_realistic_dust
+    PROPERTIES
+      FIXTURES_REQUIRED "mockdata_realistic;cece_met_catchem_realistic_run"
+      LABELS ci
+      TIMEOUT 120
+  )
+endif()

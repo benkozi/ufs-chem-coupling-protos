@@ -651,10 +651,10 @@ def test_real_file_quirks(inputs: dict[str, Path]) -> None:
 # file's bytes, as written by tools/realistic_defaults.py on 2026-11-06 from the Ursa scrape of the same day
 # (python 3.14.7, 26 files described, statistics for every variable), then formatted by yamlfix as pre-commit
 # does (magnitudes are rounded to six significant digits so the formatter leaves every value as it is). A change
-# to the scrape, the builder or the analytic base changes these digests on purpose.
-REALISTIC_DIGEST = "fc88f1812ffeb2ca857bb6ff7182e57cac1b1a37a76646c4380f7aca44caf4ae"
+# to the scrape, the builder or the analytic base changes these digests on purpose (issue #18: daily_padding_days 1).
+REALISTIC_DIGEST = "325269aebfa6bb6bf1c65152500053f2fa8e8e83fe71ef66dd2d024841d0a008"
 REALISTIC_FILE_DIGEST = (
-    "8a17b2ddd39cb76c638e6d38de141841556c6e698ddf6659e3f5879efe6c2c8e"
+    "16b47e1105114c504264667ba4b25c5c57309d5abe8e0a7f3e0c18dd2b3e3cb6"
 )
 CATCHEM_CONFIG_PATH = Path(
     "extern/CATChem/tests/Configs/Default/CATChem_new_config.yml"

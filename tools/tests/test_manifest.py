@@ -4,7 +4,7 @@ import hashlib
 import inspect
 import json
 import shutil
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pydantic
@@ -215,8 +215,8 @@ def test_pressure_top_must_be_below_the_surface_pressure(tmp_path: Path) -> None
 # reads (soil layers, column, surface, geography, tracers); task 6 added nine host tracers (so2, no3, oh, h2o2,
 # so4, oc1, oc2, bc1, bc2). Issue #17 changed the dump (1327c798… -> 4b4d6887…) without touching the file: the
 # models grew `pole_centred` and `layout`, whose defaults now appear in the dump; DEFAULTS_FILE_DIGEST pins the
-# bytes of the file itself.
-DEFAULTS_DIGEST = "4b4d688783d9fdae015f8ebcfaabc79bfa28609778228378e0d2eda0982377c0"
+# bytes of the file itself. Issue #18 did the same with `clock.daily_padding_days` (4b4d6887… -> 57a8a800…).
+DEFAULTS_DIGEST = "57a8a80006d1cb5299ffa07b5a4350c24e443a56d1fa72345f89546cb4239f8b"
 DEFAULTS_FILE_DIGEST = (
     "2b484572253b9d41fce2850b80a2cd05ac9d3b81773048a55523d0d936ca5043"
 )
@@ -500,3 +500,36 @@ def test_timeless_layout_needs_a_static_category() -> None:
     assert mf.Category.model_validate(doc).layout is not None
     with pytest.raises(pydantic.ValidationError, match="must be static"):
         mf.Category.model_validate(daily_category(layout={"time_dimension": False}))
+
+
+def test_daily_padding_extends_the_files_on_both_sides(tmp_path: Path) -> None:
+    """Issue #18: CECE's linear blend needs the records on both sides of the run (D-1 and D+1)."""
+    clock = make(tmp_path).clock.model_copy(update={"daily_padding_days": 1})
+    category = mf.Category.model_validate(daily_category())
+    assert [p.name for p in category.files_for(clock)] == [
+        "CEDS.2019.emis.20210321.nc",
+        "CEDS.2019.emis.20210322.nc",
+        "CEDS.2019.emis.20210323.nc",
+        "CEDS.2019.emis.20210324.nc",
+    ]
+    assert clock.calendar_days() == [
+        date(2021, 3, 21),
+        date(2021, 3, 22),
+        date(2021, 3, 23),
+        date(2021, 3, 24),
+    ]
+    assert make(tmp_path).clock.daily_padding_days == 0
+    with pytest.raises(pydantic.ValidationError, match="daily_padding_days"):
+        clock.model_copy(update={"daily_padding_days": -1}).model_validate(
+            clock.model_dump() | {"daily_padding_days": -1}
+        )
+
+
+def test_explicit_time_axis_decodes_its_stamps() -> None:
+    axis = mf.ExplicitTimeAxis(
+        units="hours since 2010-01-15 00:00:00", values=[0.0, 730.0]
+    )
+    assert axis.stamps() == [
+        datetime(2010, 1, 15, tzinfo=UTC),
+        datetime(2010, 2, 14, 10, tzinfo=UTC),
+    ]

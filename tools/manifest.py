@@ -12,8 +12,10 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import Literal, Self
+from typing import Literal, Self, cast
 
+import netCDF4
+import numpy as np
 import yaml
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
@@ -111,6 +113,11 @@ class Clock(Strict):
         description="Number of model levels (NPZ); the vertical size of 3-D inventories.",
         gt=0,
     )
+    daily_padding_days: int = Field(
+        default=0,
+        description="Calendar days written before and after the run for a daily category (issue #18: CECE's linear blend needs the records on both sides of the window; the realistic profile uses 1).",
+        ge=0,
+    )
 
     @model_validator(mode="after")
     def _step_divides_duration(self) -> Clock:
@@ -127,6 +134,16 @@ class Clock(Strict):
     @property
     def n_steps(self) -> int:
         return self.duration_hours * 3600 // self.step_seconds
+
+    def calendar_days(self) -> list[date]:
+        """The UTC calendar days the run touches, padded by `daily_padding_days` on each side, in order."""
+        first = self.start.astimezone(UTC).date() - timedelta(
+            days=self.daily_padding_days
+        )
+        last = (self.end - timedelta(microseconds=1)).astimezone(
+            UTC
+        ).date() + timedelta(days=self.daily_padding_days)
+        return [first + timedelta(days=i) for i in range((last - first).days + 1)]
 
 
 class LatLonGrid(Strict):
@@ -312,6 +329,20 @@ class ExplicitTimeAxis(Strict):
         description="Every record time in `units`, in file order.", min_length=1
     )
 
+    def stamps(self) -> list[datetime]:
+        """The record times as UTC datetimes (netCDF4's CF decoding)."""
+        decoded = netCDF4.num2date(
+            np.asarray(self.values, dtype=np.float64),
+            units=self.units,
+            calendar=self.calendar,
+            only_use_cftime_datetimes=False,
+            only_use_python_datetimes=True,
+        )
+        dates = decoded if isinstance(decoded, np.ndarray) else np.array([decoded])
+        return [
+            d.replace(tzinfo=UTC) for d in cast(list[datetime], dates.ravel().tolist())
+        ]
+
 
 class FileLayout(Strict):
     """How a category's file is laid out on disk when it mirrors a real inventory (the realistic profile); absent for the analytic profile's CF layout."""
@@ -452,12 +483,14 @@ class Category(Strict):
         return self.layout is not None and self.layout.format == "point_table"
 
     def files_for(self, clock: Clock) -> list[Path]:
-        """The files of the category for the clock: one per calendar day the run touches for daily, else the one file."""
+        """The files of the category for the clock: one per calendar day the run touches (plus the clock's padding days for a gridded series; a point table is copied for the run's days only) for daily, else the one file."""
         if self.cadence != "daily":
             return [self.file]
-        first = clock.start.astimezone(UTC).date()
-        last = (clock.end - timedelta(microseconds=1)).astimezone(UTC).date()
-        days = [first + timedelta(days=i) for i in range((last - first).days + 1)]
+        days = (
+            clock.model_copy(update={"daily_padding_days": 0}).calendar_days()
+            if self.is_point_table
+            else clock.calendar_days()
+        )
         return [expand_date_tokens(self.file, day) for day in days]
 
 

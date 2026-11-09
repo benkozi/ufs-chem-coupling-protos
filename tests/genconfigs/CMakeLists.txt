@@ -87,3 +87,37 @@ set_tests_properties(
     LABELS ci
     TIMEOUT 120
 )
+
+# Issue #18: the realistic set (CATChem's production categories, tools/defaults/gen_configs_realistic.yaml) from
+# the realistic C48 manifest; the generator also writes the per-run window files of the daily series under
+# build/gen/C48_realistic/streams (CECE reads one file per stream). Registered only with the realistic defaults.
+if(EXISTS ${PROJECT_SOURCE_DIR}/tools/defaults/manifest_realistic.yaml)
+  set(GEN_DIR_REALISTIC ${PROJECT_BINARY_DIR}/gen/C48_realistic)
+  add_test(
+    NAME gen_configs_realistic
+    COMMAND
+      ${UV_EXECUTABLE} run --no-sync python -m tools.gen_configs
+      --manifest data/C48_realistic/manifest.yaml --out ${GEN_DIR_REALISTIC} --pets 6
+      --defaults tools/defaults/gen_configs_realistic.yaml
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+  )
+  set_tests_properties(
+    gen_configs_realistic
+    PROPERTIES
+      FIXTURES_REQUIRED mockdata_realistic
+      FIXTURES_SETUP genconfigs_realistic
+      LABELS ci
+      TIMEOUT 300
+  )
+  add_test(
+    NAME gen_configs_realistic_cece_valid
+    COMMAND
+      ${UV_EXECUTABLE} run --no-sync python ${PROJECT_SOURCE_DIR}/extern/CECE/scripts/validate_cece_config.py
+      ${GEN_DIR_REALISTIC}/cece.yaml
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+  )
+  set_tests_properties(
+    gen_configs_realistic_cece_valid
+    PROPERTIES FIXTURES_REQUIRED genconfigs_realistic LABELS ci TIMEOUT 120
+  )
+endif()

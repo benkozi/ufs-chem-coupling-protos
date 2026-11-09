@@ -1,0 +1,374 @@
+# Parameter set of the config generator (tools/gen_configs.py) for the realistic profile (issue  # 18): CATChem's
+# production categories of tests/Configs/Default/CATChem_new_config.yml (apply_method, vertical_dist, plume_rise,
+# scale_factor) and the production emission map of CATChem_emission.yml (the fan-out of fire's biomass, SO2 to so2
+# and so4, the MET_* targets of the FENGSHA inputs), for the manifest tools/defaults/manifest_realistic.yaml.
+# Select with `gen_configs --defaults tools/defaults/gen_configs_realistic.yaml` (or PROTOS_GEN_DEFAULTS). The
+# shared keys (prototype, verbosity, processes, diagnostics, run_sequence, cece_amio) must equal the analytic
+# file's (a test checks); `prototype` is also the esmApp pass line and the ESMF log prefix the CTest specs match.
+# Parsed by tools.gen_defaults.GenDefaults. Edit here, not in Python.
+#
+# volcano is the volcanic point table (format volcano in CATChem): written inactive, no map entry, no import,
+# no CECE stream (CECE has no point path, ufs-community/CECE#167). CATChem's own `point` block is always off.
+# daily_hold and monthly_anchor are not written: absent from the production config and inert on the import path.
+# MET also consumes two CECE exports (met_hosted_imports::) and writes their per-level totals: anthro1/SO2 from
+# the daily window file and dust/clayfrac from the timeless soil file; the conservation checks read them.
+# catchem_units: the realistic manifest's unit strings (as the real files spell them) -> the spellings
+# catchem_emis_apply converts (kg/m2/s, mol/mol, nmol/l); the MET_* inputs bypass the conversion, their `1` is
+# informational.
+prototype: cece_met_catchem
+verbosity: low
+processes:
+  - seasalt
+seasalt_scheme: geos12
+diagnostics:
+  enabled: false
+  directory: catchem_diag
+  prefix: catchem
+  frequency: 3600
+  format: netcdf
+  diag_list:
+    - seas1
+    - seas2
+    - seas3
+    - seas4
+    - seas5
+run_sequence:
+  - CECE
+  - CECE -> MET
+  - MET
+  - CECE -> CATCHEM
+  - MET -> CATCHEM
+  - CATCHEM
+  - CATCHEM -> MET
+hosted_imports:
+  - category: anthro1
+    variable: SO2
+  - category: dust
+    variable: clayfrac
+catchem_units:
+  kg/m2/s: kg/m2/s
+  kg m-2 s-1: kg/m2/s
+  kg s-1 m-2: kg/m2/s
+  mol/mol: mol/mol
+  nmol l-1: nmol/l
+  '-': '1'
+  count: '1'
+  '1': '1'
+cece_amio:
+  worker_threads: 1
+  staging_buffer_count: 2
+  staging_buffer_capacity_bytes: 4194304
+  prefetch_depth: 1
+categories:
+  so2_aviation_lto:
+    apply_method: add
+    vertical_dist: aviation_lto
+    variables:
+      so2_aviation:
+        long_name: Sulfur Dioxide from Aviation LTO
+        scale:
+          - 1.0
+        map:
+          - so2
+  oc_aviation_lto:
+    apply_method: add
+    vertical_dist: aviation_lto
+    variables:
+      oc_aviation:
+        long_name: Organic Carbon from Aviation LTO
+        scale:
+          - 0.9
+          - 0.9
+        map:
+          - oc1
+          - oc2
+  bc_aviation_lto:
+    apply_method: add
+    vertical_dist: aviation_lto
+    variables:
+      bc_aviation:
+        long_name: Black Carbon from Aviation LTO
+        scale:
+          - 0.8
+          - 0.2
+        map:
+          - bc1
+          - bc2
+  so2_aviation_cds:
+    apply_method: add
+    vertical_dist: aviation_cds
+    variables:
+      so2_aviation:
+        long_name: Sulfur Dioxide from Aviation CDS
+        scale:
+          - 1.0
+        map:
+          - so2
+  oc_aviation_cds:
+    apply_method: add
+    vertical_dist: aviation_cds
+    variables:
+      oc_aviation:
+        long_name: Organic Carbon from Aviation CDS
+        scale:
+          - 0.9
+          - 0.9
+        map:
+          - oc1
+          - oc2
+  bc_aviation_cds:
+    apply_method: add
+    vertical_dist: aviation_cds
+    variables:
+      bc_aviation:
+        long_name: Black Carbon from Aviation CDS
+        scale:
+          - 0.8
+          - 0.2
+        map:
+          - bc1
+          - bc2
+  so2_aviation_crs:
+    apply_method: add
+    vertical_dist: aviation_crs
+    variables:
+      so2_aviation:
+        long_name: Sulfur Dioxide from Aviation CRS
+        scale:
+          - 1.0
+        map:
+          - so2
+  oc_aviation_crs:
+    apply_method: add
+    vertical_dist: aviation_crs
+    variables:
+      oc_aviation:
+        long_name: Organic Carbon from Aviation CRS
+        scale:
+          - 0.9
+          - 0.9
+        map:
+          - oc1
+          - oc2
+  bc_aviation_crs:
+    apply_method: add
+    vertical_dist: aviation_crs
+    variables:
+      bc_aviation:
+        long_name: Black Carbon from Aviation CRS
+        scale:
+          - 0.8
+          - 0.2
+        map:
+          - bc1
+          - bc2
+  gmi:
+    apply_method: replace
+    vertical_dist: none
+    variables:
+      oh:
+        long_name: Hydroxyl Radical
+        scale:
+          - 1.0
+        map:
+          - oh
+      h2o2:
+        long_name: Hydrogen Peroxide
+        scale:
+          - 1.0
+        map:
+          - h2o2
+      no3:
+        long_name: Nitrate Radical
+        scale:
+          - 1.0
+        map:
+          - no3
+  dms:
+    apply_method: replace
+    vertical_dist: none
+    variables:
+      conc:
+        long_name: Dimethyl Sulfide
+        scale:
+          - 1.0
+        map:
+          - dms_in
+  fengsha:
+    apply_method: replace
+    vertical_dist: none
+    variables:
+      PC:
+        long_name: Drag Partition
+        scale:
+          - 1.0
+        map:
+          - MET_RDRAG
+  anthro1:
+    apply_method: add
+    vertical_dist: P100
+    variables:
+      SO2:
+        long_name: Sulfur Dioxide
+        scale:
+          - 0.97
+          - 0.045
+        map:
+          - so2
+          - so4
+      OC:
+        long_name: Organic Carbon
+        scale:
+          - 0.9
+          - 0.9
+        map:
+          - oc1
+          - oc2
+      BC:
+        long_name: Black Carbon
+        scale:
+          - 0.8
+          - 0.2
+        map:
+          - bc1
+          - bc2
+  anthro2:
+    apply_method: add
+    vertical_dist: P500
+    variables:
+      SO2_elev:
+        long_name: Sulfur Dioxide at Elevated Levels
+        scale:
+          - 0.97
+          - 0.045
+        map:
+          - so2
+          - so4
+      OC_elev:
+        long_name: Organic Carbon at Elevated Levels
+        scale:
+          - 0.9
+          - 0.9
+        map:
+          - oc1
+          - oc2
+      BC_elev:
+        long_name: Black Carbon at Elevated Levels
+        scale:
+          - 0.8
+          - 0.2
+        map:
+          - bc1
+          - bc2
+  ship:
+    apply_method: add
+    vertical_dist: P100
+    variables:
+      SO2_ship:
+        long_name: Sulfur Dioxide from Ships
+        scale:
+          - 1.0
+        map:
+          - so2
+      SO4_ship:
+        long_name: Sulfate from Ships
+        scale:
+          - 1.0
+        map:
+          - so4
+      OC_ship:
+        long_name: Organic Carbon from Ships
+        scale:
+          - 0.9
+          - 0.9
+        map:
+          - oc1
+          - oc2
+      BC_ship:
+        long_name: Black Carbon from Ships
+        scale:
+          - 0.8
+          - 0.2
+        map:
+          - bc1
+          - bc2
+  fire:
+    apply_method: add
+    vertical_dist: Ppbl
+    plume_rise: sofiev
+    scale_factor: 0.7778
+    variables:
+      biomass:
+        long_name: Sulfur Dioxide from Biomass Burning
+        scale:
+          - 1.0
+          - 0.9
+          - 0.9
+          - 0.8
+          - 0.2
+        map:
+          - so2
+          - oc1
+          - oc2
+          - bc1
+          - bc2
+  bio:
+    apply_method: add
+    vertical_dist: none
+    variables:
+      limo:
+        long_name: Limonene
+        scale:
+          - 0.09
+        map:
+          - oc2
+      isoprene:
+        long_name: Isoprene
+        scale:
+          - 0.054
+        map:
+          - oc2
+      mtpa:
+        long_name: Monoterpene alpha-Pinene
+        scale:
+          - 0.09
+        map:
+          - oc2
+      mtpo:
+        long_name: Monoterpene other
+        scale:
+          - 0.09
+        map:
+          - oc2
+  volcano:
+    apply_method: add
+    inactive: true
+    variables: {}
+  dust:
+    apply_method: replace
+    vertical_dist: none
+    variables:
+      clayfrac:
+        long_name: Clay Fraction
+        scale:
+          - 1.0
+        map:
+          - MET_CLAYFRAC
+      sandfrac:
+        long_name: Sand Fraction
+        scale:
+          - 1.0
+        map:
+          - MET_SANDFRAC
+      sep:
+        long_name: Sediment Supply Map
+        scale:
+          - 1.0
+        map:
+          - MET_SSM
+      uthres:
+        long_name: Friction Velocity Threshold
+        scale:
+          - 1.0
+        map:
+          - MET_USTAR_THRESHOLD

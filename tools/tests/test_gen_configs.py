@@ -418,3 +418,132 @@ def test_a_bad_cece_omit_is_a_usage_error(
     with caplog.at_level(logging.ERROR, logger=log.ROOT_NAME):
         assert run(manifest_file, tmp_path / "g", "--cece-omit", request_) == 2
     assert message in caplog.text
+
+
+# --- issue #18: the realistic set ---------------------------------------------------------------------------
+
+
+REALISTIC_GEN_DEFAULTS = REPO_ROOT / "tools/defaults/gen_configs_realistic.yaml"
+
+
+@pytest.fixture
+def realistic_data(tmp_path: Path) -> Path:
+    """The realistic C48 set at grid factor 60, written under tmp_path/data/C48_realistic (paths relative to tmp_path)."""
+    from tools import inventories as inv
+
+    manifest = mf.default_manifest(
+        resolution="C48",
+        out_dir=Path("data/C48_realistic"),
+        command="test",
+        defaults_file=get_settings().realistic_defaults_file,
+        grid_factor=60,
+    )
+    rooted = manifest.model_copy(
+        update={
+            "land_mask": manifest.land_mask.model_copy(
+                update={"file": tmp_path / manifest.land_mask.file}
+            ),
+            "categories": {
+                n: c.model_copy(update={"file": tmp_path / c.file})
+                for n, c in manifest.categories.items()
+            },
+        }
+    )
+    inv.generate_inventories(rooted)
+    path = tmp_path / "data" / "C48_realistic" / "manifest.yaml"
+    manifest.to_yaml(path)
+    return path
+
+
+def test_realistic_set_generates_with_window_files(
+    realistic_data: Path, tmp_path: Path
+) -> None:
+    out = tmp_path / "gen"
+    assert (
+        run(
+            realistic_data,
+            out,
+            "--data-root",
+            str(tmp_path),
+            "--defaults",
+            str(REALISTIC_GEN_DEFAULTS),
+        )
+        == 0
+    )
+    record = gc.GeneratedSet.from_yaml(out / "gen_configs_manifest.yaml")
+    windows = sorted(p.name for p in (out / "streams").iterdir())
+    assert windows == [
+        "CEDS.2019.emis.nc",
+        "MEGAN.OFFLINE.BIOVOC.emis.nc",
+        "qfed2.emis_so2.006.nc4",
+    ]
+    assert {k for k in record.outputs if k.startswith("streams/")} == {
+        f"streams/{w}" for w in windows
+    }
+    cece = yaml.safe_load((out / "cece.yaml").read_text())
+    streams = {s["name"]: s for s in cece["cece_data"]["streams"]}
+    assert len(streams) == 18
+    assert streams["anthro1"]["file"] == str(out / "streams" / "CEDS.2019.emis.nc")
+    assert streams["anthro1"]["taxmode"] == "limit"
+    assert streams["so2_aviation_lto"]["taxmode"] == "cycle"
+    assert len(cece["nuopc"]["export_fields"]) == 33
+    assert gc.validate_cece_file(out / "cece.yaml") == []
+    driver = (out / "esm.configure").read_text()
+    assert "  extemis_anthro1_SO2 anthro1 SO2 " in driver
+    assert "  extemis_dust_clayfrac dust clayfrac " in driver
+    science = yaml.safe_load((out / "CATChem_new_config.yml").read_text())
+    ext = science["processes"]["extemis"]
+    assert ext["volcano"] == {"activate": False, "gridded": False}
+    assert ext["gmi"]["reverse_vertical"] is True
+    mapping = yaml.safe_load((out / "CATChem_field_mapping.yml").read_text())
+    assert (
+        sum(e["catchem_var"].startswith("extemis/") for e in mapping["import_fields"])
+        == 33
+    )
+    emission = yaml.safe_load((out / "CATChem_emission.yml").read_text())
+    assert "volcano" not in emission
+    assert emission["fire"]["biomass"]["units"] == "kg/m2/s"
+
+
+def test_a_missing_daily_file_is_a_usage_error(
+    realistic_data: Path, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    (
+        tmp_path
+        / "data/C48_realistic/ExtData/QFED/2021/03/qfed2.emis_so2.006.20210324.nc4"
+    ).unlink()
+    with caplog.at_level(logging.ERROR, logger=log.ROOT_NAME):
+        assert (
+            run(
+                realistic_data,
+                tmp_path / "gen",
+                "--data-root",
+                str(tmp_path),
+                "--defaults",
+                str(REALISTIC_GEN_DEFAULTS),
+            )
+            == 2
+        )
+    assert "20210324" in caplog.text
+
+
+def test_two_daily_templates_cannot_share_a_window_name(tmp_path: Path) -> None:
+    manifest = mf.default_manifest(
+        resolution="C48",
+        out_dir=Path("data/C48_realistic"),
+        command="test",
+        defaults_file=get_settings().realistic_defaults_file,
+    )
+    fire = manifest.categories["fire"]
+    twin = fire.model_copy(
+        update={
+            "file": Path(
+                "data/C48_realistic/ExtData/QFED_v2/%y4/%m2/qfed2.emis_so2.006.%y4%m2%d2.nc4"
+            )
+        }
+    )
+    doubled = manifest.model_copy(
+        update={"categories": manifest.categories | {"fire2": twin}}
+    )
+    with pytest.raises(gc.UsageError, match="share the window file name"):
+        gc.write_windows(doubled, tmp_path, tmp_path / "gen")
