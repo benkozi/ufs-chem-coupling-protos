@@ -174,6 +174,14 @@ class Settings(BaseSettings):
         default="esm.configure",
         description="Name of the emitted driver configuration under --out.",
     )
+    field_dictionary_fragment_filename: str = Field(
+        default="fd_extemis.yaml",
+        description="Name of the emitted field-dictionary fragment (the emission entries alone) in the run-directory layout.",
+    )
+    wm_driver_filename: str = Field(
+        default="ufs.configure.atmaero_cece.IN",
+        description="Name of the emitted weather-model driver template in the run-directory layout.",
+    )
     gen_record_filename: str = Field(
         default="gen_configs_manifest.yaml",
         description="Name of the record the generator writes under --out (what was generated from which manifest).",

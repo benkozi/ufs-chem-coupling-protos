@@ -71,8 +71,8 @@ exclude_also = [
 [tool.codespell]
 # tools/defaults/extdata holds scraped attributes of real data files, spelled as their producers spelled them.
 skip = "./design,./extern,./build,./coverage-html,./uv.lock,./.venv,./.git,./.mypy_cache,./.ruff_cache,./.pytest_cache,*.nc,./tools/defaults/extdata"
-# Fortran keywords are not typos.
-ignore-words-list = "inout"
+# Fortran keywords are not typos; `parm` is the ufs-weather-model's tests/parm directory.
+ignore-words-list = "inout,parm"
 
 # Dead-code detection (pre-commit, whole tree). Names bound by frameworks rather than by code are ignored.
 [tool.vulture]

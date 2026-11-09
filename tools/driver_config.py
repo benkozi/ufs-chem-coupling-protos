@@ -7,6 +7,7 @@ from pathlib import Path
 import yaml
 from pydantic import Field, model_validator
 
+from tools import gen_defaults as gd
 from tools import manifest as mf
 from tools.catchem_yaml import standard_name
 from tools.manifest import Strict
@@ -73,6 +74,81 @@ def with_emission_entries(
     ]
     dictionary = base.field_dictionary.model_copy(update={"entries": kept + emission})
     return FieldDictionaryFile(field_dictionary=dictionary)
+
+
+class FieldDictionaryFragment(Strict):
+    """The emission entries alone, for appending to a host's dictionary (the weather model's fd_ufs.yaml)."""
+
+    entries: list[FieldDictionaryEntry] = Field(
+        description="The emission entries, in manifest order."
+    )
+
+    def to_yaml(self, path: Path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            yaml.safe_dump(
+                {"field_dictionary": self.model_dump(mode="json", exclude_none=True)},
+                sort_keys=False,
+            )
+        )
+
+
+def emission_fragment(manifest: mf.Manifest) -> FieldDictionaryFragment:
+    return FieldDictionaryFragment(
+        entries=[
+            FieldDictionaryEntry(
+                standard_name=standard_name(category, variable),
+                canonical_units=spec.units,
+            )
+            for category, cat in manifest.categories.items()
+            if not cat.is_point_table
+            for variable, spec in cat.variables.items()
+        ]
+    )
+
+
+WM_KEY_WIDTH = 32
+
+
+def render_wm_driver(wm: gd.WmDriver) -> str:
+    """The weather model's tests/parm/ufs.configure.atmaero.IN, line for line, with the given components and sequence."""
+    lines = [
+        "#############################################",
+        "####  UFS Run-Time Configuration File  ######",
+        "#############################################",
+        "",
+        "# ESMF #",
+        "logKindFlag:            @[esmf_logkind]",
+        "globalResourceControl:  @[ESMF_THREADING]",
+        "",
+        "# EARTH #",
+        f"EARTH_component_list: {' '.join(c.label for c in wm.components)}",
+        "EARTH_attributes::",
+        "  Verbosity = 0",
+        "::",
+        "",
+    ]
+    for c in wm.components:
+        lines += [
+            f"# {c.label} #",
+            *[
+                f"{c.label}_{key}:".ljust(WM_KEY_WIDTH) + f"@[{c.placeholder}_{key}]"
+                for key in ("model", "petlist_bounds", "omp_num_threads")
+            ],
+            f"{c.label}_attributes::",
+            "  Verbosity = 0",
+            "::",
+            "",
+        ]
+    lines += [
+        "# Run Sequence #",
+        "runSeq::",
+        "  @@[coupling_interval_sec]",
+        *[f"    {line}" for line in wm.run_sequence],
+        "  @",
+        "::",
+    ]
+    return "\n".join(lines) + "\n"
 
 
 class HostedImportRow(Strict):
