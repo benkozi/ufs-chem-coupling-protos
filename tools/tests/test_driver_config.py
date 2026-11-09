@@ -24,7 +24,7 @@ def manifest() -> mf.Manifest:
 def driver(**overrides: object) -> dc.DriverConfig:
     base: dict[str, object] = {
         "prototype": "cece_met_catchem",
-        "components": ["MET", "CATCHEM", "CECE"],
+        "components": ["ATM", "CHM", "CECE"],
         "pets": 6,
         "verbosity": "high",
         "manifest": Path("/root/data/C48/manifest.yaml"),
@@ -36,11 +36,11 @@ def driver(**overrides: object) -> dc.DriverConfig:
         "step_seconds": 720,
         "run_sequence": [
             "CECE",
-            "MET",
-            "CECE -> CATCHEM",
-            "MET -> CATCHEM",
-            "CATCHEM",
-            "CATCHEM -> MET",
+            "ATM",
+            "CECE -> CHM",
+            "ATM -> CHM",
+            "CHM",
+            "CHM -> ATM",
         ],
     }
     return dc.DriverConfig.model_validate(base | overrides)
@@ -62,8 +62,10 @@ def test_every_field_of_every_model_has_a_description() -> None:
 def test_rendered_driver_config(tmp_path: Path) -> None:
     text = driver().render()
     assert "prototype: cece_met_catchem\n" in text
-    assert "EARTH_component_list: MET CATCHEM CECE\n" in text
-    for prefix in ("CECE", "MET", "CATCHEM"):
+    assert "EARTH_component_list: ATM CHM CECE\n" in text
+    for prefix, model in (("ATM", "proto_met"), ("CHM", "catchem"), ("CECE", "cece")):
+        # UFSDriver picks a component by <PFX>_model, not by its label
+        assert f"{prefix}_model: {model}\n{prefix}_petlist_bounds: 0 5\n" in text
         assert f"{prefix}_petlist_bounds: 0 5\n" in text
         assert f"{prefix}_attributes::\n  Verbosity = high\n::\n" in text
     assert "manifest: /root/data/C48/manifest.yaml\n" in text
@@ -74,7 +76,7 @@ def test_rendered_driver_config(tmp_path: Path) -> None:
     assert "regdecomp_per_tile" not in text
     assert "met_hosted_imports" not in text
     assert (
-        "runSeq::\n  @720\n    CECE\n    MET\n    CECE -> CATCHEM\n    MET -> CATCHEM\n    CATCHEM\n    CATCHEM -> MET\n  @\n::\n"
+        "runSeq::\n  @720\n    CECE\n    ATM\n    CECE -> CHM\n    ATM -> CHM\n    CHM\n    CHM -> ATM\n  @\n::\n"
         in text
     )
     path = tmp_path / "esm.configure"
@@ -165,10 +167,18 @@ def test_hosted_import_fields_must_be_single_tokens() -> None:
 
 
 def test_cece_needs_its_grid_host_listed_before_it() -> None:
-    # CECE takes its grid from MET's tracer field (CECE_SetHostGeometry): the host realizes first.
-    with pytest.raises(pydantic.ValidationError, match="MET before CECE"):
-        driver(components=["CECE", "MET", "CATCHEM"])
-    with pytest.raises(pydantic.ValidationError, match="MET before CECE"):
+    # CECE takes its grid from ATM's tracer field (CECE_SetHostGeometry): the host realizes first.
+    with pytest.raises(pydantic.ValidationError, match="ATM before CECE"):
+        driver(components=["CECE", "ATM", "CHM"])
+    with pytest.raises(pydantic.ValidationError, match="ATM before CECE"):
         driver(components=["CECE"], run_sequence=["CECE"])
-    assert driver(components=["MET", "CECE"]).components == ["MET", "CECE"]
-    assert driver(components=["MET", "CATCHEM"]).components == ["MET", "CATCHEM"]
+    assert driver(components=["ATM", "CECE"]).components == ["ATM", "CECE"]
+    assert driver(components=["ATM", "CHM"]).components == ["ATM", "CHM"]
+
+
+def test_labels_are_the_weather_models() -> None:
+    # ufs.configure names the meteorology provider ATM and CATChem CHM; the old labels are refused
+    assert dc.COMPONENT_MODELS == {"ATM": "proto_met", "CHM": "catchem", "CECE": "cece"}
+    for old in ("MET", "CATCHEM"):
+        with pytest.raises(pydantic.ValidationError, match="unknown components"):
+            driver(components=["ATM", old])

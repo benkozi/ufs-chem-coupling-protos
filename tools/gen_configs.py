@@ -91,9 +91,9 @@ def hosted_rows(
 ) -> list[dc.HostedImportRow]:
     """The met_hosted_imports:: rows of the defaults' hosted imports, checked against the manifest."""
     rows: list[dc.HostedImportRow] = []
-    if defaults.hosted_imports and "CECE -> MET" not in defaults.run_sequence:
+    if defaults.hosted_imports and "CECE -> ATM" not in defaults.run_sequence:
         raise UsageError(
-            "hosted imports need `CECE -> MET` in run_sequence (the driver adds only the connectors runSeq:: names)"
+            "hosted imports need `CECE -> ATM` in run_sequence (the driver adds only the connectors runSeq:: names)"
         )
     for h in defaults.hosted_imports:
         category = manifest.categories.get(h.category)
@@ -238,7 +238,7 @@ def generate(
     )
     dc.DriverConfig(
         prototype=defaults.prototype,
-        components=["MET", "CATCHEM", "CECE"],
+        components=["ATM", "CHM", "CECE"],
         pets=pets,
         verbosity=defaults.verbosity,
         manifest=manifest_path,

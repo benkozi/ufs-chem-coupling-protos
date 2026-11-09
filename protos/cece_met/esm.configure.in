@@ -4,18 +4,21 @@
 
 prototype: cece_met
 
-# EARTH # The list is the initialize order: MET first, because CECE reads its grid off MET's realized tracer
-# field (CECE_SetHostGeometry) at the start of its own realize phase. The run order is runSeq:: below.
-EARTH_component_list: MET CECE
+# EARTH # Labels as in the ufs-weather-model's ufs.configure; <PFX>_model picks the component. The list is the
+# initialize order: ATM first, because CECE reads its grid off ATM's realized tracer field
+# (CECE_SetHostGeometry) at the start of its own realize phase. The run order is runSeq:: below.
+EARTH_component_list: ATM CECE
 
-# MET: the analytic meteorology provider (protos/met_catchem/proto_met.F90); here the host of CECE's grid and
+# ATM: the analytic meteorology provider (protos/met_catchem/proto_met.F90); here the host of CECE's grid and
 # the consumer of CECE's export.
-MET_petlist_bounds: -1 -1
-MET_attributes::
+ATM_model: proto_met
+ATM_petlist_bounds: -1 -1
+ATM_attributes::
   Verbosity = high
 ::
 
 # CECE: the CECE NUOPC cap (cece_nuopc_cap) from the image, on all PETs (one DE per PET, the host's decomposition).
+CECE_model: cece
 CECE_petlist_bounds: -1 -1
 CECE_attributes::
   Verbosity = high
@@ -45,7 +48,7 @@ grid_source: mosaic
 runSeq::
   @@STEP_SECONDS@
     CECE
-    CECE -> MET
-    MET
+    CECE -> ATM
+    ATM
   @
 ::

@@ -15,8 +15,9 @@ from tools.settings import get_settings
 
 # sha256 of the canonical JSON dump of GenDefaults from tools/defaults/gen_configs.yaml (task 5; task 6 added
 # hosted_imports anthro/SO2, `CECE -> MET` in run_sequence, catchem_units, diagnostics off, Verbosity low; the
-# performance task cece_amio; issue #18 the model defaults scale_factor, inactive and time_interpolation, the file unchanged).
-GEN_DEFAULTS_DIGEST = "95fa5e0c34a4baec82e8c2c50f9d248036040a95c1a452cfabae1b2d0d7e184e"
+# performance task cece_amio; issue #18 the model defaults scale_factor, inactive and time_interpolation, the file unchanged;
+# issue #16 the labels ATM and CHM in run_sequence).
+GEN_DEFAULTS_DIGEST = "2e2507aa9ef68315fcb886d819bdc86c2285a5c442d1ef259627a49e0d6be92b"
 
 
 def test_every_field_of_every_model_has_a_description() -> None:
@@ -43,8 +44,8 @@ def test_checked_in_defaults_cover_every_manifest_category_and_variable() -> Non
     assert defaults.categories["fire"].vertical_dist == "Ppbl"
     assert defaults.processes == ["seasalt"]
     assert defaults.run_sequence[0] == "CECE"
-    assert defaults.run_sequence[1] == "CECE -> MET"
-    assert defaults.run_sequence[-1] == "CATCHEM -> MET"
+    assert defaults.run_sequence[1] == "CECE -> ATM"
+    assert defaults.run_sequence[-1] == "CHM -> ATM"
     assert defaults.cece_amio == gd.CeceAmio(
         worker_threads=1,
         staging_buffer_count=2,

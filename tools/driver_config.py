@@ -12,7 +12,9 @@ from tools.catchem_yaml import standard_name
 from tools.manifest import Strict
 from tools.settings import get_settings
 
-KNOWN_COMPONENTS = ("CECE", "MET", "CATCHEM")
+# The driver's components: the label of ufs.configure -> the <PFX>_model value the driver selects by (UFSDriver
+# does the same: `CHM_model: catchem`). ATM is the analytic meteorology provider standing in for the FV3 cap.
+COMPONENT_MODELS = {"ATM": "proto_met", "CHM": "catchem", "CECE": "cece"}
 
 
 class FieldDictionaryEntry(Strict):
@@ -101,7 +103,7 @@ class DriverConfig(Strict):
         description="The run's name (summary line, driver component, pass expression)."
     )
     components: list[str] = Field(
-        description="EARTH_component_list in order (MET, CATCHEM, CECE): the initialize order; MET precedes CECE.",
+        description="EARTH_component_list in order (ATM, CHM, CECE): the initialize order; ATM precedes CECE.",
         min_length=1,
     )
     pets: int = Field(description="PET count; every component runs on all PETs.", gt=0)
@@ -135,7 +137,7 @@ class DriverConfig(Strict):
     )
     hosted_imports: list[HostedImportRow] = Field(
         default_factory=list,
-        description="Rows of met_hosted_imports::, the CECE exports MET also consumes; no table when empty.",
+        description="Rows of met_hosted_imports::, the CECE exports ATM also consumes; no table when empty.",
     )
 
     @model_validator(mode="after")
@@ -152,19 +154,19 @@ class DriverConfig(Strict):
             raise ValueError(
                 f"regdecomp {self.regdecomp[0]} x {self.regdecomp[1]} must equal the PET count per tile {self.pets // tiles}"
             )
-        unknown = [c for c in self.components if c not in KNOWN_COMPONENTS]
+        unknown = [c for c in self.components if c not in COMPONENT_MODELS]
         if unknown:
             raise ValueError(
-                f"unknown components {unknown}; the driver knows {', '.join(KNOWN_COMPONENTS)}"
+                f"unknown components {unknown}; the driver knows {', '.join(COMPONENT_MODELS)}"
             )
-        # CECE takes its grid from MET's realized tracer field (CECE_SetHostGeometry); the driver initializes
+        # CECE takes its grid from ATM's realized tracer field (CECE_SetHostGeometry); the driver initializes
         # its children in list order, so the host comes first.
         if "CECE" in self.components and (
-            "MET" not in self.components
-            or self.components.index("MET") > self.components.index("CECE")
+            "ATM" not in self.components
+            or self.components.index("ATM") > self.components.index("CECE")
         ):
             raise ValueError(
-                f"components {self.components}: list MET before CECE (CECE's grid comes from MET's tracer field)"
+                f"components {self.components}: list ATM before CECE (CECE's grid comes from ATM's tracer field)"
             )
         return self
 
@@ -178,6 +180,7 @@ class DriverConfig(Strict):
         ]
         for component in self.components:
             lines += [
+                f"{component}_model: {COMPONENT_MODELS[component]}",
                 f"{component}_petlist_bounds: 0 {self.pets - 1}",
                 f"{component}_attributes::",
                 f"  Verbosity = {self.verbosity}",

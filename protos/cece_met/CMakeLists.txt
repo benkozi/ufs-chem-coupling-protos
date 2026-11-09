@@ -1,5 +1,5 @@
 # Prototype cece_met: CECE on the cubed-sphere tile grid with MET as the consumer (task 4). The executable is
-# protos/met_catchem's esmApp (EARTH_component_list: MET CECE); this directory renders the configs and
+# protos/met_catchem's esmApp (EARTH_component_list: ATM CECE); this directory renders the configs and
 # registers the tests. See runbook.md section 10.
 
 find_program(UV_EXECUTABLE uv REQUIRED)
@@ -83,7 +83,7 @@ set(_log_check ${PROJECT_SOURCE_DIR}/tests/log_check.cmake)
 file(
   WRITE ${CMAKE_CURRENT_BINARY_DIR}/log_cece_met.spec
   [=[
-require \[Cap\] grid source: host field MET/inst_tracer_mass_frac \(tileCount=6, local DE [0-5] of tile [1-6]\)
+require \[Cap\] grid source: host field ATM/inst_tracer_mass_frac \(tileCount=6, local DE [0-5] of tile [1-6]\)
 require \[Cap\] Host grid block: .* \(48x48\), corners 49x49
 forbid \[Cap\] Parent grid:
 forbid \[Cap\] No parent grid or mesh
@@ -99,12 +99,12 @@ add_test(
 set_tests_properties(log_cece_met PROPERTIES FIXTURES_REQUIRED cece_met_run LABELS ci TIMEOUT 120)
 
 # The component-order rule's failure case: the driver runs each initialize phase over its children in
-# EARTH_component_list order, so with CECE listed before MET the cap finds MET's tracer field unrealized and
+# EARTH_component_list order, so with CECE listed before ATM (the label of MET, the analytic provider) the cap finds its tracer field unrealized and
 # says so. esmApp prints only the failing phase; the named error is checked on the PET logs.
 file(READ ${CMAKE_CURRENT_BINARY_DIR}/esm.C48.configure _cece_met_config)
-string(REPLACE "EARTH_component_list: MET CECE" "EARTH_component_list: CECE MET" _bad_order_config "${_cece_met_config}")
+string(REPLACE "EARTH_component_list: ATM CECE" "EARTH_component_list: CECE ATM" _bad_order_config "${_cece_met_config}")
 if(_bad_order_config STREQUAL _cece_met_config)
-  message(FATAL_ERROR "cece_met: esm.configure.in no longer has 'EARTH_component_list: MET CECE'; update the bad-order case")
+  message(FATAL_ERROR "cece_met: esm.configure.in no longer has 'EARTH_component_list: ATM CECE'; update the bad-order case")
 endif()
 file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/esm.C48.bad_order.configure "${_bad_order_config}")
 set(_run_bad_order ${CMAKE_CURRENT_BINARY_DIR}/run_C48_np6_bad_order)
@@ -129,7 +129,7 @@ set_tests_properties(
 file(
   WRITE ${CMAKE_CURRENT_BINARY_DIR}/log_cece_met_bad_order.spec
   [=[
-require \[Cap\] host geometry field inst_tracer_mass_frac of MET is not realized; the host must precede CECE
+require \[Cap\] host geometry field inst_tracer_mass_frac of ATM is not realized; the host must precede CECE
 ]=]
 )
 add_test(

@@ -39,12 +39,12 @@ diagnostics:
     - seas5
 run_sequence:
   - CECE
-  - CECE -> MET
-  - MET
-  - CECE -> CATCHEM
-  - MET -> CATCHEM
-  - CATCHEM
-  - CATCHEM -> MET
+  - CECE -> ATM
+  - ATM
+  - CECE -> CHM
+  - ATM -> CHM
+  - CHM
+  - CHM -> ATM
 hosted_imports:
   - category: anthro1
     variable: SO2
