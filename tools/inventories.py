@@ -502,10 +502,17 @@ def write_file(
     first = manifest.categories[names[0]]
     layout = first.layout
     grid = manifest.grids[first.grid]
-    axis = time_axis(first.cadence, manifest.clock, layout, day)
     time_name = layout.time_name if layout else "time"
     with_extras = layout is None or layout.write_bounds_and_area
     timeless = layout is not None and not layout.time_dimension
+    # A timeless category keeps the static record (one stamp at the clock start) whatever time coordinate its
+    # file carries for a time-bearing sibling.
+    axis = time_axis(first.cadence, manifest.clock, None if timeless else layout, day)
+    file_axis = (
+        explicit_time_axis(first.cadence, layout.time_axis)
+        if timeless and layout is not None and layout.time_axis is not None
+        else None
+    )
     ds = _grid_dataset(grid, manifest.earth_radius_m, layout)
     time_attrs = {
         "units": axis.units,
@@ -522,6 +529,21 @@ def write_file(
                     time_name,
                     np.array(axis.values, dtype=np.float64),
                     time_attrs,
+                )
+            }
+        )
+    if file_axis is not None:
+        ds = ds.assign_coords(
+            {
+                time_name: (
+                    time_name,
+                    np.array(file_axis.values, dtype=np.float64),
+                    {
+                        "units": file_axis.units,
+                        "calendar": file_axis.calendar,
+                        "standard_name": "time",
+                        "axis": "T",
+                    },
                 )
             }
         )
@@ -564,8 +586,14 @@ def write_file(
             values = field_values(
                 variable, category, grid, manifest.clock, fraction, axis
             )
+            if variable.missing_where_masked:
+                # fill cells where the real file has them (outside the mask), not zeros
+                outside = (
+                    _mask_factor(category, fraction) < manifest.land_mask.threshold
+                )
+                values = np.where(outside, np.float32(np.nan), values)
             per_level = values.astype(np.float64) * area
-            summed = per_level.sum(axis=(-2, -1))
+            summed = np.nansum(per_level, axis=(-2, -1))
             records = summed if category.is_3d else summed[:, None]
             if category.is_3d and layout is not None and layout.lev_before_time:
                 values = np.swapaxes(values, 0, 1)
@@ -581,6 +609,25 @@ def write_file(
                 encoding[var_name]["_FillValue"] = np.asarray(
                     layout.fill_value, dtype=dtype
                 )
+            if (
+                file_axis is not None
+                and layout is not None
+                and layout.time_bearing_sibling is not None
+                and layout.time_bearing_sibling not in ds
+            ):
+                # the time-bearing sibling: this (first) variable's field at every record of the file's axis
+                sibling = layout.time_bearing_sibling
+                ds[sibling] = (
+                    (time_name, *dims),
+                    np.broadcast_to(
+                        values.astype(dtype), (len(file_axis.values), *values.shape)
+                    ).copy(),
+                    {
+                        "units": variable.units,
+                        "long_name": f"time-bearing sibling of the static fields ({var_name} at every record)",
+                    },
+                )
+                encoding[sibling] = dict(deflate)
             per_category[var_name] = VariableTotals(
                 units=variable.units, records=records.tolist()
             )

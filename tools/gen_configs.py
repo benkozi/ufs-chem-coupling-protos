@@ -218,6 +218,9 @@ def generate(
         defaults.cece_amio,
         omit,
         windows={t: w.path for t, w in windows.items()},
+        time_interpolation={
+            name: c.time_interpolation for name, c in defaults.categories.items()
+        },
     ).to_yaml(paths["cece"])
     dc.with_emission_entries(base_dictionary, manifest).to_yaml(paths["dictionary"])
     cy.science_config(

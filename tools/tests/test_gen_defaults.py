@@ -15,8 +15,8 @@ from tools.settings import get_settings
 
 # sha256 of the canonical JSON dump of GenDefaults from tools/defaults/gen_configs.yaml (task 5; task 6 added
 # hosted_imports anthro/SO2, `CECE -> MET` in run_sequence, catchem_units, diagnostics off, Verbosity low; the
-# performance task cece_amio; issue #18 the model defaults scale_factor and inactive, the file unchanged).
-GEN_DEFAULTS_DIGEST = "80b6ee55bd3ea8bd00f7eb9b744244110dce1aa3c2d41bb1b75a1662a9aba1b2"
+# performance task cece_amio; issue #18 the model defaults scale_factor, inactive and time_interpolation, the file unchanged).
+GEN_DEFAULTS_DIGEST = "95fa5e0c34a4baec82e8c2c50f9d248036040a95c1a452cfabae1b2d0d7e184e"
 
 
 def test_every_field_of_every_model_has_a_description() -> None:
@@ -134,8 +134,15 @@ def test_realistic_defaults_cover_every_realistic_manifest_variable() -> None:
     assert defaults.categories["fengsha"].variables["PC"].map == ["MET_RDRAG"]
     assert [(h.category, h.variable) for h in defaults.hosted_imports] == [
         ("anthro1", "SO2"),
-        ("dust", "clayfrac"),
+        ("dust", "sep"),
     ]
+    # the production config's time_interpolation: absent (none) holds a record, linear blends two
+    held = {n for n, c in defaults.categories.items() if c.time_interpolation == "none"}
+    assert held == {"anthro1", "anthro2", "ship", "gmi"}
+    assert (
+        gd.CategoryDefaults(apply_method="add", variables={}).time_interpolation
+        == "linear"
+    )
     assert defaults.catchem_units["kg s-1 m-2"] == "kg/m2/s"
     assert defaults.catchem_units["nmol l-1"] == "nmol/l"
     assert defaults.catchem_units["-"] == "1"

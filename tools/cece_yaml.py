@@ -82,8 +82,8 @@ class Stream(Strict):
     cadence: StreamCadence = Field(
         description="series (hourly and static files), daily (one file per day) or monthly."
     )
-    tintalgo: Literal["linear"] = Field(
-        description="Linear time interpolation between records."
+    tintalgo: Literal["linear", "nearest"] = Field(
+        description="linear blends the two bracketing records; nearest holds one (CATChem's time_interpolation none: with CECE's time_label auto a midnight-stamped daily record is held for its day)."
     )
     taxmode: TaxMode = Field(
         description="limit (fail outside the axis), extend (a single static record) or cycle (a climatology read by year wrap)."
@@ -185,13 +185,16 @@ def cece_config(
     amio: gd.CeceAmio,
     omit: frozenset[tuple[str, str]] = frozenset(),
     windows: Mapping[Path, Path] | None = None,
+    time_interpolation: Mapping[str, gd.TimeInterpolation] | None = None,
 ) -> CeceConfig:
     """The CECE YAML for the manifest; `omit` (category, variable) pairs are neither read nor exported.
 
     `omit` exists for the unconnected-import failure case (gen_configs --cece-omit): CATChem still advertises
     the field, CECE does not provide it. A category with every variable omitted has no stream, nor has a point
-    table. `windows` maps a daily category's token template to the window file the generator wrote.
+    table. `windows` maps a daily category's token template to the window file the generator wrote;
+    `time_interpolation` maps a category to CATChem's linear or none (default linear).
     """
+    interpolation = time_interpolation or {}
     nz = manifest.clock.n_levels
     streams: list[Stream] = []
     species: dict[str, list[SpeciesLayer]] = {}
@@ -216,7 +219,7 @@ def cece_config(
                 name=name,
                 file=str(stream_file(name, category, data_root, windows or {})),
                 cadence=stream_cadence,
-                tintalgo="linear",
+                tintalgo="nearest" if interpolation.get(name) == "none" else "linear",
                 taxmode=taxmode,
                 mapalgo=category.cece_mapalgo or "consd",
                 variables=variables,

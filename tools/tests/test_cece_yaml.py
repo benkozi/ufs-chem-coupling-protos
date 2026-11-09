@@ -192,3 +192,24 @@ def test_a_daily_category_without_a_window_file_is_an_error(tmp_path: Path) -> N
     manifest = realistic_manifest(tmp_path)
     with pytest.raises(ValueError, match="window file"):
         cz.cece_config(manifest, data_root=tmp_path, amio=AMIO)
+
+
+def test_time_interpolation_decides_the_time_algorithm(tmp_path: Path) -> None:
+    """Issue #18 follow-up: CATChem holds a CEDS day and a GMI month (no time_interpolation), CECE must not blend them."""
+    manifest = realistic_manifest(tmp_path)
+    windows = {
+        manifest.categories[c].file: tmp_path / f"{c}.nc"
+        for c in ("anthro1", "fire", "bio")
+    }
+    config = cz.cece_config(
+        manifest,
+        data_root=tmp_path,
+        amio=AMIO,
+        windows=windows,
+        time_interpolation={"anthro1": "none", "gmi": "none", "fire": "linear"},
+    )
+    streams = {s.name: s for s in config.cece_data.streams}
+    assert streams["anthro1"].tintalgo == "nearest"
+    assert streams["gmi"].tintalgo == "nearest"
+    assert streams["fire"].tintalgo == "linear"
+    assert streams["bio"].tintalgo == "linear"  # not named: linear, as before

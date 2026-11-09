@@ -575,7 +575,10 @@ def test_real_file_quirks(inputs: dict[str, Path]) -> None:
         variables={
             "albedo_drag": variable(["time", "lat", "lon"], [2, 18, 36]),
             "clayfrac": variable(
-                ["lat", "lon"], [18, 36], stats=stats(0.2, 0.7), units="-"
+                ["lat", "lon"],
+                [18, 36],
+                stats=stats(0.2, 0.7) | {"fill_fraction": 0.77},
+                units="-",
             ),
         },
     )
@@ -630,12 +633,29 @@ def test_real_file_quirks(inputs: dict[str, Path]) -> None:
     dust_cat = defaults.categories["dust"]
     assert dust_cat.layout is not None
     assert not dust_cat.layout.time_dimension
-    assert dust_cat.layout.time_axis is None
+    # the real soil file carries a time axis and a time-bearing sibling next to its timeless variables
+    assert dust_cat.layout.time_axis == mf.ExplicitTimeAxis(
+        units="hours since 2018-01-01", values=[0.0, 744.0]
+    )
+    assert dust_cat.layout.time_bearing_sibling == "albedo_drag"
     assert dust_cat.variables["clayfrac"].units == "-"
+    # 77 % of the real clay fraction is fill (the ocean): the synthetic field is missing where masked
+    assert dust_cat.variables["clayfrac"].missing_where_masked
+    assert not gmi.variables["oh"].missing_where_masked
     assert defaults.categories["ship"].masked_by == "ocean"
     # the realistic defaults round-trip through YAML with equality (no NaN inside)
     defaults.to_yaml(inputs["out"])
     assert mf.ManifestDefaults.from_yaml(inputs["out"]) == defaults
+    # a time axis no variable uses is not carried into the layout
+    lonely = json.loads(inputs["headers"].read_text())
+    for f in lonely["files"]:
+        if f["path"] == dust_path:
+            del f["variables"]["albedo_drag"]
+    inputs["headers"].write_text(json.dumps(lonely))
+    lonely_layout = rd.build(load(inputs)).categories["dust"].layout
+    assert lonely_layout is not None
+    assert lonely_layout.time_axis is None
+    assert lonely_layout.time_bearing_sibling is None
     # a non-static category whose variables have no time dimension is refused
     config["processes"]["extemis"]["dust"]["frequency"] = "monthly"
     inputs["config"].write_text(yaml.safe_dump(config))
@@ -652,9 +672,9 @@ def test_real_file_quirks(inputs: dict[str, Path]) -> None:
 # (python 3.14.7, 26 files described, statistics for every variable), then formatted by yamlfix as pre-commit
 # does (magnitudes are rounded to six significant digits so the formatter leaves every value as it is). A change
 # to the scrape, the builder or the analytic base changes these digests on purpose (issue #18: daily_padding_days 1).
-REALISTIC_DIGEST = "325269aebfa6bb6bf1c65152500053f2fa8e8e83fe71ef66dd2d024841d0a008"
+REALISTIC_DIGEST = "102e22b33c19ec9280bf04aa69eaceab964932b2d962b736d91cef7049f904ca"
 REALISTIC_FILE_DIGEST = (
-    "16b47e1105114c504264667ba4b25c5c57309d5abe8e0a7f3e0c18dd2b3e3cb6"
+    "a8acf8f83e0011490213cc469ac81d02a292da50aa31119467ed70a72442562d"
 )
 CATCHEM_CONFIG_PATH = Path(
     "extern/CATChem/tests/Configs/Default/CATChem_new_config.yml"

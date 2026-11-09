@@ -377,7 +377,7 @@ require catchem_emis_update: Emission data updated
 forbid CATChem: emission open category=
 forbid AQMIO: open iomode=read path=
 require MET: hosted import extemis_anthro1_SO2 ShareStatusField=shared
-require MET: hosted import extemis_dust_clayfrac ShareStatusField=shared
+require MET: hosted import extemis_dust_sep ShareStatusField=shared
 forbid Unrecognized emission field units
 forbid Unrecognized vertical_dist option
 forbid DRIVER FATAL
@@ -396,27 +396,30 @@ below 1200000 cece_met_catchem: memory per PET max virt [0-9]+ KB phys ([0-9]+) 
     PROPERTIES FIXTURES_REQUIRED cece_met_catchem_realistic_run LABELS ci TIMEOUT 120
   )
 
-  # Stream timing, on CECE's per-step slice lines (logged when a stream's bracket changes). CECE's time_label
-  # 'auto' centres a day-spaced record on its day (a midnight stamp opens the day it labels, a noon stamp is
-  # the centre), the MAPL/CATChem 12Z-knot convention: the four-record windows (21 to 24 March) blend records
-  # 1 and 2 at 06Z, read record 2 alone at 12Z and blend 2 and 3 from 12:12 on, which holds across midnight
-  # (no later line, and record 4 is never needed); the 2010 HTAP climatology is read by year wrap onto its
-  # March/April records and GMI inside its own axis ("decoded axis", never the arithmetic fallback); the
-  # timeless soil file is one record. Every axis decodes and no stream runs out of coverage.
+  # Stream timing, on CECE's per-step slice lines (logged when a stream's bracket changes), following CATChem's
+  # time_interpolation per category. Held (none -> tintalgo nearest): the CEDS window is read as record 2 (22
+  # March) at 06Z and as record 3 (23 March) from midnight on, never blended, which is what the production run
+  # opened; GMI is read as its March record. Blended (linear): CECE's time_label 'auto' centres a day-spaced
+  # record on its day (the MAPL/CATChem 12Z knots), so the QFED and MEGAN windows blend records 1 and 2 at 06Z
+  # and 2 and 3 from 12:12 on; the 2010 HTAP, 2011 DMS and 2022 FENGSHA climatologies are read by year wrap
+  # ("decoded axis", never the arithmetic fallback). The soil file, which now carries a 12-record time axis and
+  # a time-bearing sibling as the real one does, serves its timeless variables as one record.
   file(
     WRITE ${CMAKE_CURRENT_BINARY_DIR}/timing_cece_met_catchem_realistic.spec
     [=[
-require \[DRIVER\] Interpolating time slices 1 & 2/4 \(w=0\.75[0-9]*\) from '.*streams/CEDS\.2019\.emis\.nc' for field 'anthro1_SO2' \(decoded axis, .*time=2021-03-22T06:00:00
-require \[DRIVER\] Reading time slice 2/4 from '.*streams/CEDS\.2019\.emis\.nc' for field 'anthro1_SO2' \(decoded axis, time=2021-03-22T12:00:00
-require \[DRIVER\] Interpolating time slices 2 & 3/4 .*streams/CEDS\.2019\.emis\.nc' for field 'anthro1_SO2' \(decoded axis, .*time=2021-03-22T12:12:00
-forbid \[DRIVER\] Interpolating time slices 3 & 4/4 .*streams/CEDS\.2019\.emis\.nc'
+require \[DRIVER\] Reading time slice 2/4 from '.*streams/CEDS\.2019\.emis\.nc' for field 'anthro1_SO2' \(decoded axis, time=2021-03-22T06:00:00
+require \[DRIVER\] Reading time slice 3/4 from '.*streams/CEDS\.2019\.emis\.nc' for field 'anthro1_SO2' \(decoded axis, time=2021-03-23T00:00:00
+forbid \[DRIVER\] Interpolating time slices .*streams/CEDS\.2019\.emis\.nc'
+require \[DRIVER\] Interpolating time slices 1 & 2/4 \(w=0\.75[0-9]*\) from '.*streams/qfed2\.emis_so2\.006\.nc4' for field 'fire_biomass' \(decoded axis, .*time=2021-03-22T06:00:00
 require \[DRIVER\] Interpolating time slices 2 & 3/4 .*streams/qfed2\.emis_so2\.006\.nc4' for field 'fire_biomass' \(decoded axis, .*time=2021-03-22T12:12:00
 require \[DRIVER\] Interpolating time slices 2 & 3/4 .*streams/MEGAN\.OFFLINE\.BIOVOC\.emis\.nc' for field 'bio_isoprene' \(decoded axis
 require \[DRIVER\] Interpolating time slices 3 & 4/12 .*htap-v2\.2\.emis_so2\.aviation_lto.*' for field 'so2_aviation_lto_so2_aviation' \(decoded axis
 require \[DRIVER\] Interpolating time slices 3 & 4/12 .*DMSclim_sfcconcentration.*' for field 'dms_conc' \(decoded axis
 require \[DRIVER\] Interpolating time slices 3 & 4/12 .*FENGSHA_New_Method_NESDISv1\.1_9km\.nc' for field 'fengsha_PC' \(decoded axis
-require \[DRIVER\] Interpolating time slices 4 & 5/14 .*A2_ACCMIP_gmic_MERRA.*' for field 'gmi_oh' \(decoded axis
+require \[DRIVER\] Reading time slice 4/14 from '.*A2_ACCMIP_gmic_MERRA.*' for field 'gmi_oh' \(decoded axis
+forbid \[DRIVER\] Interpolating time slices .*A2_ACCMIP_gmic_MERRA
 require \[DRIVER\] Reading time slice 1/1 from '.*FENGSHA_2022_NESDIS_inputs_10km_v3\.2\.nc' for field 'dust_clayfrac' \(single record
+require \[DRIVER\] Reading time slice 1/1 from '.*FENGSHA_2022_NESDIS_inputs_10km_v3\.2\.nc' for field 'dust_sep' \(single record
 forbid degraded arithmetic
 forbid outside the coverage
 forbid DRIVER FATAL
@@ -451,11 +454,12 @@ grow MET: tracer so2 area-weighted sum ([-+0-9.E]+) at
   )
 
   # Conservation on the two hosted imports. A daily or static inventory has one record stamp inside the run
-  # (CEDS 2021-03-23T00Z: CECE blends the 22 and 23 March records half and half there, and the realistic daily
-  # records carry no cycle, so the blend equals the record; the soil file's single record at the clock start),
-  # so --min-matches 1; the analytic run keeps the 24-stamp check. Tolerances are the measured errors rounded
-  # up (2026-11-06, cloud builder): consd from the coarsened 1 deg CEDS grid 1.513e-5; nn from the 1 deg soil
-  # grid 6.840e-4 (nearest-neighbour is not conservative: this check proves the timeless read, not the physics).
+  # (CEDS 2021-03-23T00Z, where the held record of 23 March comes into force; the soil file's single record at
+  # the clock start), so --min-matches 1; the analytic run keeps the 24-stamp check. Tolerances are the
+  # measured errors rounded up (cloud builder): consd from the coarsened 1 deg CEDS grid 1.513e-5; nn of sep
+  # from the 1 deg soil grid 2.008e-3 (nearest-neighbour is not conservative: this check proves the timeless
+  # read, not the physics). sep is the hosted soil variable because clayfrac and sandfrac carry fill cells
+  # over the ocean, as the real file does.
   set(_checker_realistic ${UV_EXECUTABLE} run --no-sync python -m tools.check_conservation
       --expected ${PROJECT_SOURCE_DIR}/data/C48_realistic/inventories/totals.yaml
       --run-dir ${_run_realistic} --level 1 --zero-above --min-matches 1)
@@ -466,7 +470,7 @@ grow MET: tracer so2 area-weighted sum ([-+0-9.E]+) at
   )
   add_test(
     NAME conservation_cece_met_catchem_realistic_dust
-    COMMAND ${_checker_realistic} --category dust --variable clayfrac --rtol 1e-3
+    COMMAND ${_checker_realistic} --category dust --variable sep --rtol 3e-3
     WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
   )
   set_tests_properties(

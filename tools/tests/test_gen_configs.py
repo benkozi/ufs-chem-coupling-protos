@@ -490,7 +490,9 @@ def test_realistic_set_generates_with_window_files(
     assert gc.validate_cece_file(out / "cece.yaml") == []
     driver = (out / "esm.configure").read_text()
     assert "  extemis_anthro1_SO2 anthro1 SO2 " in driver
-    assert "  extemis_dust_clayfrac dust clayfrac " in driver
+    assert "  extemis_dust_sep dust sep " in driver
+    assert streams["anthro1"]["tintalgo"] == "nearest"
+    assert streams["fire"]["tintalgo"] == "linear"
     science = yaml.safe_load((out / "CATChem_new_config.yml").read_text())
     ext = science["processes"]["extemis"]
     assert ext["volcano"] == {"activate": False, "gridded": False}

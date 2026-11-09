@@ -15,6 +15,7 @@ from pydantic import Field, model_validator
 from tools.manifest import Strict
 
 ApplyMethod = Literal["add", "replace"]
+TimeInterpolation = Literal["linear", "none"]
 
 
 class EmissionMapVariable(Strict):
@@ -53,6 +54,10 @@ class CategoryDefaults(Strict):
     scale_factor: float = Field(
         default=1.0,
         description="CATChem scale_factor of the category (the production config scales fire by 0.7778).",
+    )
+    time_interpolation: TimeInterpolation = Field(
+        default="linear",
+        description="CATChem's time_interpolation of the category on its file path, which CECE must reproduce on the import path: linear blends the two bracketing records (CECE tintalgo linear), none holds the record of the current period (tintalgo nearest; a CEDS day, a GMI month).",
     )
     inactive: bool = Field(
         default=False,

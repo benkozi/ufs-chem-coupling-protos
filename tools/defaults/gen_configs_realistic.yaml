@@ -11,7 +11,12 @@
 # no CECE stream (CECE has no point path, ufs-community/CECE#167). CATChem's own `point` block is always off.
 # daily_hold and monthly_anchor are not written: absent from the production config and inert on the import path.
 # MET also consumes two CECE exports (met_hosted_imports::) and writes their per-level totals: anthro1/SO2 from
-# the daily window file and dust/clayfrac from the timeless soil file; the conservation checks read them.
+# the daily window file and dust/sep from the timeless soil file (sep has no fill cells; clayfrac and sandfrac are
+# fill over the ocean, as in the real file); the conservation checks read them.
+# time_interpolation: CATChem's key on its file path (absent in the production config means none). none holds the
+# record of the current period (anthro1, anthro2, ship: a CEDS day, switching at 00Z; gmi: a month) and becomes
+# CECE's tintalgo nearest; linear (the default here, as in the production config for every other category)
+# blends the two bracketing records.
 # catchem_units: the realistic manifest's unit strings (as the real files spell them) -> the spellings
 # catchem_emis_apply converts (kg/m2/s, mol/mol, nmol/l); the MET_* inputs bypass the conversion, their `1` is
 # informational.
@@ -44,7 +49,7 @@ hosted_imports:
   - category: anthro1
     variable: SO2
   - category: dust
-    variable: clayfrac
+    variable: sep
 catchem_units:
   kg/m2/s: kg/m2/s
   kg m-2 s-1: kg/m2/s
@@ -165,6 +170,7 @@ categories:
   gmi:
     apply_method: replace
     vertical_dist: none
+    time_interpolation: none
     variables:
       oh:
         long_name: Hydroxyl Radical
@@ -207,6 +213,7 @@ categories:
   anthro1:
     apply_method: add
     vertical_dist: P100
+    time_interpolation: none
     variables:
       SO2:
         long_name: Sulfur Dioxide
@@ -235,6 +242,7 @@ categories:
   anthro2:
     apply_method: add
     vertical_dist: P500
+    time_interpolation: none
     variables:
       SO2_elev:
         long_name: Sulfur Dioxide at Elevated Levels
@@ -263,6 +271,7 @@ categories:
   ship:
     apply_method: add
     vertical_dist: P100
+    time_interpolation: none
     variables:
       SO2_ship:
         long_name: Sulfur Dioxide from Ships

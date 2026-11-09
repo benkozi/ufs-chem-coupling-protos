@@ -316,6 +316,10 @@ class Variable(Strict):
     vertical: Vertical | None = Field(
         default=None, description="Vertical profile for 3-D data, or null."
     )
+    missing_where_masked: bool = Field(
+        default=False,
+        description="Write the layout's fill value (NaN when it has none) where the category's mask fraction is below the land mask's threshold, instead of zero: the real clay and sand fractions are fill over the ocean. Needs a masked category.",
+    )
 
 
 class ExplicitTimeAxis(Strict):
@@ -397,7 +401,11 @@ class FileLayout(Strict):
     )
     time_axis: ExplicitTimeAxis | None = Field(
         default=None,
-        description="The file's own time coordinate for monthly and static files, or null for the analytic axis; not allowed for hourly and daily files.",
+        description="The file's own time coordinate for monthly and static files, or null for the analytic axis; not allowed for hourly and daily files. With time_dimension false it is the coordinate the file carries although the category's variables do not use it.",
+    )
+    time_bearing_sibling: str | None = Field(
+        default=None,
+        description="Name of an extra variable written on (time, lat, lon) in a file whose category variables have no time dimension (the real soil file's albedo_drag beside clayfrac); needs time_axis and time_dimension false.",
     )
 
 
@@ -471,6 +479,20 @@ class Category(Strict):
             and self.cadence != "static"
         ):
             raise ValueError("a file without a time dimension must be static")
+        if (
+            layout is not None
+            and layout.time_bearing_sibling is not None
+            and (layout.time_dimension or layout.time_axis is None)
+        ):
+            raise ValueError(
+                "time_bearing_sibling needs time_dimension false and the file's time_axis"
+            )
+        if self.masked_by == "none" and any(
+            v.missing_where_masked for v in self.variables.values()
+        ):
+            raise ValueError(
+                "missing_where_masked needs a category masked by land or ocean"
+            )
         has_tokens = any(token in str(self.file) for token in DATE_TOKENS)
         if (self.cadence == "daily") != has_tokens:
             raise ValueError(

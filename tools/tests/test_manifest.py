@@ -216,7 +216,7 @@ def test_pressure_top_must_be_below_the_surface_pressure(tmp_path: Path) -> None
 # so4, oc1, oc2, bc1, bc2). Issue #17 changed the dump (1327c798… -> 4b4d6887…) without touching the file: the
 # models grew `pole_centred` and `layout`, whose defaults now appear in the dump; DEFAULTS_FILE_DIGEST pins the
 # bytes of the file itself. Issue #18 did the same with `clock.daily_padding_days` (4b4d6887… -> 57a8a800…).
-DEFAULTS_DIGEST = "57a8a80006d1cb5299ffa07b5a4350c24e443a56d1fa72345f89546cb4239f8b"
+DEFAULTS_DIGEST = "b5a0a683225e55c5bf9875f3b23998fc294d9c4a17e40b0e1b6ef508302b5d28"
 DEFAULTS_FILE_DIGEST = (
     "2b484572253b9d41fce2850b80a2cd05ac9d3b81773048a55523d0d936ca5043"
 )
@@ -533,3 +533,34 @@ def test_explicit_time_axis_decodes_its_stamps() -> None:
         datetime(2010, 1, 15, tzinfo=UTC),
         datetime(2010, 2, 14, 10, tzinfo=UTC),
     ]
+
+
+def test_fill_and_sibling_rules() -> None:
+    """Issue #18 follow-up: fill cells where the real file has them, and the soil file's own time axis."""
+    base = daily_category(cadence="static", file="dust.nc")
+    axis = {"units": "hours since 2018-01-01", "values": [0.0, 744.0]}
+    ok = mf.Category.model_validate(
+        base
+        | {
+            "layout": {
+                "time_dimension": False,
+                "time_axis": axis,
+                "time_bearing_sibling": "albedo_drag",
+            }
+        }
+    )
+    assert ok.layout is not None
+    assert ok.layout.time_bearing_sibling == "albedo_drag"
+    with pytest.raises(pydantic.ValidationError, match="time_bearing_sibling"):
+        mf.Category.model_validate(
+            base | {"layout": {"time_dimension": False, "time_bearing_sibling": "x"}}
+        )
+    with pytest.raises(pydantic.ValidationError, match="time_bearing_sibling"):
+        mf.Category.model_validate(
+            base | {"layout": {"time_axis": axis, "time_bearing_sibling": "x"}}
+        )
+    unmasked = mf.Category.model_validate(base).model_dump() | {"masked_by": "none"}
+    for spec in unmasked["variables"].values():
+        spec["missing_where_masked"] = True
+    with pytest.raises(pydantic.ValidationError, match="missing_where_masked"):
+        mf.Category.model_validate(unmasked)
