@@ -9,6 +9,8 @@
 #                            stage (needed on Apple silicon, where Rosetta cannot run the image's HDF5);
 #                            the run outputs land in build/ci-out/<label>/, the exit status is ctest's;
 #                            the `profile` label builds the image with Kokkos Tools (KOKKOS_TOOLS=on)
+#                            labels: ci (default), c96, profile, local, and wm (the checked-in weather-model
+#                            set run as it is: about 5.6 minutes and 1.44 GB per PET, kept out of ci)
 # The three command strings are the ones .github/workflows/ci.yaml runs; keep them identical.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."

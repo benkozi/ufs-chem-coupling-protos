@@ -29,11 +29,13 @@ repos:
         # Preserve Markdown hard line breaks (trailing double-space). tools/defaults/extdata holds files
         # copied verbatim from the ExtData tree (the volcanic tables carry trailing spaces) and the
         # scrape's JSON; they are data, kept as their producers wrote them.
+        # configs/wm holds generated configuration sets, compared byte for byte with what the generator
+        # writes (wm_configs_*_in_sync); no hook may rewrite them, here or in the YAML hooks below.
         args:
           - --markdown-linebreak-ext=md
-        exclude: ^(design/|uv\.lock$|tools/defaults/extdata/)
+        exclude: ^(design/|uv\.lock$|tools/defaults/extdata/|configs/wm/)
       - id: end-of-file-fixer
-        exclude: ^(design/|uv\.lock$|tools/defaults/extdata/)
+        exclude: ^(design/|uv\.lock$|tools/defaults/extdata/|configs/wm/)
       - id: check-merge-conflict
       - id: detect-private-key
         # The release-script tests carry a fabricated PEM (BEGIN/END around
@@ -101,11 +103,11 @@ repos:
         language: system
         types:
           - yaml
-        exclude: ^design/
+        exclude: ^(design/|configs/wm/)
       - id: yamllint
         name: yamllint
         entry: uv run yamllint --strict
         language: system
         types:
           - yaml
-        exclude: ^design/
+        exclude: ^(design/|configs/wm/)

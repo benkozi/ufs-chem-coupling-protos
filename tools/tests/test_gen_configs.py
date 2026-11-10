@@ -69,7 +69,9 @@ def test_success_writes_the_seven_files(manifest_file: Path, tmp_path: Path) -> 
         "met_hosted_imports::\n  extemis_anthro_SO2 anthro SO2 "
         f"{tmp_path / 'data/C48/inventories/anthro.nc'}\n::\n"
     ) in driver
-    assert "    CECE\n    CECE -> MET\n    MET\n" in driver
+    assert "    ATM phase1\n    CECE\n    ATM -> CHM\n" in driver
+    assert "    CECE -> ATM\n    ATM phase2\n  @\n" in driver
+    assert "EARTH_component_list: ATM CHM CECE\n" in driver
     # NUOPC's `high` Verbosity dumps every import on every Run (56 MB per PET log in 24 h at C48)
     assert "Verbosity = low\n" in driver
     assert "Verbosity = high" not in driver
@@ -323,13 +325,13 @@ def test_hosted_imports_need_a_cece_to_met_connector(
     """Without `CECE -> MET` in runSeq:: the driver adds no connector and MET's hosted import stays unconnected."""
     doc = yaml.safe_load(get_settings().gen_defaults_file.read_text())
     doc["run_sequence"] = [
-        line for line in doc["run_sequence"] if line != "CECE -> MET"
+        line for line in doc["run_sequence"] if line != "CECE -> ATM"
     ]
     custom = tmp_path / "gen.yaml"
     custom.write_text(yaml.safe_dump(doc))
     with caplog.at_level(logging.ERROR, logger=log.ROOT_NAME):
         assert run(manifest_file, tmp_path / "g", "--defaults", str(custom)) == 2
-    assert "CECE -> MET" in caplog.text
+    assert "CECE -> ATM" in caplog.text
 
 
 def test_source_files_is_the_file_path_run(manifest_file: Path, tmp_path: Path) -> None:

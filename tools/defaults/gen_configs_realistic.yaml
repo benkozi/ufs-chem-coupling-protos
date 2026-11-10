@@ -38,13 +38,34 @@ diagnostics:
     - seas4
     - seas5
 run_sequence:
+  - ATM phase1
   - CECE
-  - CECE -> MET
-  - MET
-  - CECE -> CATCHEM
-  - MET -> CATCHEM
-  - CATCHEM
-  - CATCHEM -> MET
+  - ATM -> CHM
+  - CECE -> CHM
+  - CHM
+  - CHM -> ATM
+  - CECE -> ATM
+  - ATM phase2
+# The driver configuration of the weather-model test this set is destined for (ufs.configure.atmaero_cece.IN,
+# written in the run-directory layout): tests/parm/ufs.configure.atmaero.IN with CECE. `placeholder` is the stem
+# of the atparse variables the regression-test scripts fill. run_sequence must equal the one above without
+# `CECE -> ATM`, the connector that feeds the prototype's hosted totals (a validator checks).
+wm_driver:
+  components:
+    - label: ATM
+      placeholder: atm
+    - label: CHM
+      placeholder: chm
+    - label: CECE
+      placeholder: cece
+  run_sequence:
+    - ATM phase1
+    - CECE
+    - ATM -> CHM
+    - CECE -> CHM
+    - CHM
+    - CHM -> ATM
+    - ATM phase2
 hosted_imports:
   - category: anthro1
     variable: SO2

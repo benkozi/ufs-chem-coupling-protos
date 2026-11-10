@@ -51,6 +51,8 @@ def test_success_writes_fix_inventories_and_manifest(
         assert (out / "inventories" / f"{name}.nc").exists()
     assert (out / "inventories" / "landmask.nc").exists()
     assert (out / "inventories" / "totals.yaml").exists()
+    # the analytic profile has no optics tables
+    assert not (out / "ExtData").exists()
     manifest = mf.Manifest.from_yaml(out / "manifest.yaml")
     assert manifest.resolution == "C48"
     assert manifest.clock.n_levels == 3
@@ -305,6 +307,8 @@ def test_realistic_profile_takes_its_own_defaults_file(
         == 0
     )
     assert mf.Manifest.from_yaml(out / "manifest.yaml").clock.duration_hours == 3
+    # the realistic profile also writes the six optics tables CATChem's production config names
+    assert len(list((out / "ExtData" / "monochromatic").glob("optics_*.nc"))) == 6
     # --defaults wins over the profile's file
     out2 = tmp_path / "c"
     assert (

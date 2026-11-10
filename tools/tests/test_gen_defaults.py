@@ -15,8 +15,10 @@ from tools.settings import get_settings
 
 # sha256 of the canonical JSON dump of GenDefaults from tools/defaults/gen_configs.yaml (task 5; task 6 added
 # hosted_imports anthro/SO2, `CECE -> MET` in run_sequence, catchem_units, diagnostics off, Verbosity low; the
-# performance task cece_amio; issue #18 the model defaults scale_factor, inactive and time_interpolation, the file unchanged).
-GEN_DEFAULTS_DIGEST = "95fa5e0c34a4baec82e8c2c50f9d248036040a95c1a452cfabae1b2d0d7e184e"
+# performance task cece_amio; issue #18 the model defaults scale_factor, inactive and time_interpolation, the file unchanged;
+# issue #16 the labels ATM and CHM and the weather model's two-phase order in run_sequence, and the
+# model field wm_driver, null here).
+GEN_DEFAULTS_DIGEST = "8e4d5e8212a8af8965a198820aaada2ae2e33cf2de84792a0aa664d76abd42c5"
 
 
 def test_every_field_of_every_model_has_a_description() -> None:
@@ -42,9 +44,18 @@ def test_checked_in_defaults_cover_every_manifest_category_and_variable() -> Non
     assert defaults.categories["anthro"].apply_method == "add"
     assert defaults.categories["fire"].vertical_dist == "Ppbl"
     assert defaults.processes == ["seasalt"]
-    assert defaults.run_sequence[0] == "CECE"
-    assert defaults.run_sequence[1] == "CECE -> MET"
-    assert defaults.run_sequence[-1] == "CATCHEM -> MET"
+    # The ufs-weather-model's sequence with CECE (ATM's two run phases around the chemistry), plus the one
+    # connector that feeds ATM's hosted totals.
+    assert defaults.run_sequence == [
+        "ATM phase1",
+        "CECE",
+        "ATM -> CHM",
+        "CECE -> CHM",
+        "CHM",
+        "CHM -> ATM",
+        "CECE -> ATM",
+        "ATM phase2",
+    ]
     assert defaults.cece_amio == gd.CeceAmio(
         worker_threads=1,
         staging_buffer_count=2,

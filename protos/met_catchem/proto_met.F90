@@ -5,10 +5,17 @@
 !! "will provide" and share policies so the connector reference-shares them into the cap. It also hosts
 !! CATChem's five exports as its own "will provide" imports: NUOPC never prunes a model's unconnected exports
 !! and the cap fails if one is unrealized. Fields are filled from the manifest's `met` parameters and the grid
-!! coordinates in DataInitialize and in every Advance; exports are stamped at step start (label_TimestampExport
-!! override) so CATChem's default CheckImport passes with the sequence MET / MET -> CATCHEM / CATCHEM. The
-!! tracer export persists CATChem's previous-step chemistry (copied back from the import side) and recomputes
-!! sphum analytically; nothing is read from disk.
+!! coordinates in DataInitialize and in every step; nothing is read from disk.
+!!
+!! Two run phases, as the FV3 cap has (UFSATM/ufsatm_cap.F90:164-195), so the driver runs the weather model's
+!! sequence `ATM phase1 / [CECE] / ATM -> CHM / [CECE -> CHM] / CHM / CHM -> ATM / ATM phase2`:
+!!   phase1  fills the exports for the step and stamps them at the step start, so CATChem's default
+!!           CheckImport passes; its stamp routine also sets the model clock back to the driver's time
+!!           (NUOPC_CheckSetClock, forceCurrTime), because the generic run phase has just advanced it and the
+!!           default label_SetRunClock of phase2 requires the two clocks to agree (NUOPC_refdoc 7.3.3).
+!!   phase2  takes what the other components produced in the step: it copies CATChem's tracers back into the
+!!           tracer export (sphum is recomputed in phase1) and totals the hosted imports.
+!! There is no default run phase: a bare `ATM` line in runSeq:: fails by name.
 !!
 !! Hosted imports (task 4): the driver's `met_hosted_imports::` rows name fields another component (CECE)
 !! exports that MET consumes as its own "cannot provide"/"share" imports, so the connector realizes them with
@@ -19,7 +26,8 @@ module proto_met
   use ESMF
   use NUOPC
   use NUOPC_Model, only: modelSS => SetServices, label_Advertise, label_RealizeProvided, label_DataInitialize, &
-                         label_Advance, label_CheckImport, label_TimestampExport, label_Finalize, NUOPC_ModelGet
+                         label_Advance, label_CheckImport, label_TimestampExport, label_Finalize, NUOPC_ModelGet, &
+                         routine_Run
   use catchem_nuopc_interface, only: load_field_config, field_config, is_emission_import
   use proto_manifest
   use proto_met_analytic
@@ -27,10 +35,11 @@ module proto_met
   implicit none
   private
 
-  public :: SetServices, proto_met_configure
+  public :: SetServices, proto_met_configure, TRACER_FIELD
 
   character(len=*), parameter :: STATE_LABEL = "proto_met_state"
   character(len=*), parameter :: TRACER_FIELD = "inst_tracer_mass_frac"
+  character(len=*), parameter :: PHASE1 = "phase1", PHASE2 = "phase2"   !< the FV3 cap's run phase labels
   character(len=*), parameter :: TOTALS_FILE = "met_import_totals.yaml"   !< tools.settings met_totals_filename
   integer, parameter :: TRACER_NAME_LEN = 32   !< the FV3 cap writes character(len=32) arrays
 
@@ -52,6 +61,7 @@ module proto_met
     real(rk), allocatable :: lon(:, :), lat(:, :), area(:, :), land(:, :), oro(:, :)
     type(field_spec), allocatable :: exports(:), imports(:)
     type(ESMF_Time) :: step_start
+    logical :: phase1_done = .false.  ! phase1 has run in the current step and phase2 has not yet
     integer :: step = 0
     ! hosted imports and their totals: tot(level, record, hosted), one stamp per record
     type(ESMF_VM) :: vm
@@ -97,13 +107,26 @@ contains
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
     call NUOPC_CompSpecialize(model, specLabel=label_DataInitialize, specRoutine=DataInitialize, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
-    call NUOPC_CompSpecialize(model, specLabel=label_Advance, specRoutine=Advance, rc=rc)
+    ! The default run phase is not one of MET's: it stops with the two phase names.
+    call NUOPC_CompSpecialize(model, specLabel=label_Advance, specRoutine=AdvanceWithoutPhase, rc=rc)
+    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
+    ! The two run phases. A phase label must be in the component's run phase map before a specialization can
+    ! name it (NUOPC_CompSpecialize looks specPhaseLabel up), and NUOPC_CompSetEntryPoint with the generic
+    ! routine_Run is what puts it there, as the FV3 cap and AtmOcnImplicitProto do.
+    call NUOPC_CompSetEntryPoint(model, ESMF_METHOD_RUN, phaseLabelList=(/PHASE1/), userRoutine=routine_Run, rc=rc)
+    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
+    call NUOPC_CompSpecialize(model, specLabel=label_Advance, specPhaseLabel=PHASE1, specRoutine=AdvancePhase1, rc=rc)
+    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
+    call NUOPC_CompSetEntryPoint(model, ESMF_METHOD_RUN, phaseLabelList=(/PHASE2/), userRoutine=routine_Run, rc=rc)
+    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
+    call NUOPC_CompSpecialize(model, specLabel=label_Advance, specPhaseLabel=PHASE2, specRoutine=AdvancePhase2, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
     ! CATChem stamps its exports at step end and never marks them Updated at initialization; MET only
     ! hosts them (and copies the tracers back), so the default import timestamp check does not apply.
     call NUOPC_CompSpecialize(model, specLabel=label_CheckImport, specRoutine=CheckImport, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
-    call NUOPC_CompSpecialize(model, specLabel=label_TimestampExport, specRoutine=TimestampExport, rc=rc)
+    ! phase1 only; phase2 keeps the generic stamp (the step end), as the FV3 cap does.
+    call NUOPC_CompSpecialize(model, specLabel=label_TimestampExport, specPhaseLabel=PHASE1, specRoutine=TimestampExportPhase1, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
     call NUOPC_CompSpecialize(model, specLabel=label_Finalize, specRoutine=Finalize, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
@@ -396,7 +419,6 @@ contains
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
     call ESMF_ClockGet(clock, currTime=now, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
-    s%step_start = now
     call fill_exports(s, exportState, now, rc); if (rc /= ESMF_SUCCESS) return
     ! Hosted imports: realized by the connector with the provider's storage by now; the shared status is the
     ! proof, anything else is an error (a copy would hide a decomposition mismatch).
@@ -469,13 +491,52 @@ contains
     rc = ESMF_SUCCESS
   end subroutine CheckImport
 
-  subroutine Advance(model, rc)
+  !> The default run phase: MET has none. A `runSeq::` line `ATM` without a phase label ends here.
+  subroutine AdvanceWithoutPhase(model, rc)
+    type(ESMF_GridComp) :: model
+    integer, intent(out) :: rc
+    associate (unused => model); end associate
+    call ESMF_LogSetError(ESMF_RC_ARG_BAD, msg="MET: no default run phase; runSeq:: must name `"//PHASE1//"` (before the "// &
+                          "chemistry) and `"//PHASE2//"` (after it), as ufs.configure does for ATM", &
+                          line=__LINE__, file=__FILE__, rcToReturn=rc)
+  end subroutine AdvanceWithoutPhase
+
+  !> phase1: the meteorology of the step. The tracer export keeps what phase2 of the previous step copied back;
+  !! fill_exports recomputes sphum.
+  subroutine AdvancePhase1(model, rc)
+    type(ESMF_GridComp) :: model
+    integer, intent(out) :: rc
+    type(met_state), pointer :: s
+    type(ESMF_State) :: exportState
+    type(ESMF_Clock) :: clock
+    type(ESMF_Time) :: now
+    character(len=32) :: stamp
+    rc = ESMF_SUCCESS
+    s => state_of(model, rc); if (rc /= ESMF_SUCCESS) return
+    call NUOPC_ModelGet(model, modelClock=clock, exportState=exportState, rc=rc)
+    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
+    call ESMF_ClockGet(clock, currTime=now, rc=rc)
+    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
+    s%step_start = now
+    s%phase1_done = .true.
+    call fill_exports(s, exportState, now, rc); if (rc /= ESMF_SUCCESS) return
+    if (s%step == 0) then
+      call ESMF_TimeGet(now, timeString=stamp, rc=rc)
+      if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
+      call ESMF_LogWrite("MET: run phase "//PHASE1//" (exports filled) first entered at "//trim(stamp), ESMF_LOGMSG_INFO)
+    end if
+  end subroutine AdvancePhase1
+
+  !> phase2: what the other components produced in this step. CATChem's tracer export (MET's import) becomes
+  !! the tracer export of the next step for every slot but sphum; the hosted imports are totalled with the
+  !! stamp their provider gave them in this step.
+  subroutine AdvancePhase2(model, rc)
     type(ESMF_GridComp) :: model
     integer, intent(out) :: rc
     type(met_state), pointer :: s
     type(ESMF_State) :: importState, exportState
     type(ESMF_Clock) :: clock
-    type(ESMF_Time) :: now
+    type(ESMF_Time) :: now, step_end
     type(ESMF_Field) :: fin, fout
     real(rk), pointer :: tin(:, :, :, :), tout(:, :, :, :)
     character(len=32) :: stamp
@@ -484,18 +545,37 @@ contains
     s => state_of(model, rc); if (rc /= ESMF_SUCCESS) return
     call NUOPC_ModelGet(model, modelClock=clock, importState=importState, exportState=exportState, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
-    call ESMF_ClockGet(clock, currTime=now, rc=rc)
+    ! phase1's stamp routine set the model clock back to the step start; the generic run phase gave it the
+    ! step end as stop time.
+    call ESMF_ClockGet(clock, currTime=now, stopTime=step_end, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
-    s%step_start = now
-    ! Persist CATChem's chemistry: its previous-step tracer export (MET's import) becomes this step's tracer
-    ! import for every slot but sphum, which fill_exports recomputes. Without CATChem the tracers stay as
-    ! DataInitialize left them.
+    ! phase1 must have run in this step: step_start is only meaningful then (at the first step an unset or
+    ! start-time value would otherwise let a sequence that begins with phase2 through).
+    if (.not. s%phase1_done) then
+      call ESMF_LogSetError(ESMF_RC_ARG_BAD, msg="MET: run phase "//PHASE2//" entered before "//PHASE1//" in this step; "// &
+                            "runSeq:: must run "//PHASE1//" before "//PHASE2//" in every step", &
+                            line=__LINE__, file=__FILE__, rcToReturn=rc)
+      return
+    end if
+    s%phase1_done = .false.
+    if (now /= s%step_start) then
+      call ESMF_LogSetError(ESMF_RC_ARG_BAD, msg="MET: run phase "//PHASE2//" entered at a time other than the step start "// &
+                            "of "//PHASE1//"; runSeq:: must run "//PHASE1//" before "//PHASE2//" in every step", &
+                            line=__LINE__, file=__FILE__, rcToReturn=rc)
+      return
+    end if
+    if (s%step == 0) then
+      call ESMF_TimeGet(now, timeString=stamp, rc=rc)
+      if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
+      call ESMF_LogWrite("MET: run phase "//PHASE2//" (tracers taken, hosted imports totalled) first entered at "//trim(stamp), &
+                         ESMF_LOGMSG_INFO)
+    end if
+    nullify (tin, tout)
     if (s%catchem_present) then
       call ESMF_StateGet(importState, itemName=TRACER_FIELD, field=fin, rc=rc)
       if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
       call ESMF_StateGet(exportState, itemName=TRACER_FIELD, field=fout, rc=rc)
       if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
-      nullify (tin, tout)
       call ESMF_FieldGet(fin, farrayPtr=tin, rc=rc)
       if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
       call ESMF_FieldGet(fout, farrayPtr=tout, rc=rc)
@@ -504,10 +584,10 @@ contains
         if (j /= s%sphum) tout(:, :, :, j) = tin(:, :, :, j)
       end do
     end if
-    call fill_exports(s, exportState, now, rc); if (rc /= ESMF_SUCCESS) return
     call record_hosted(s, importState, now, rc); if (rc /= ESMF_SUCCESS) return
     if (s%catchem_present) then
-      call log_tracer_sums(s, tout, now, rc); if (rc /= ESMF_SUCCESS) return
+      ! the tracers as CATChem left them at the end of this step
+      call log_tracer_sums(s, tout, step_end, rc); if (rc /= ESMF_SUCCESS) return
     end if
     s%step = s%step + 1
     if (s%step == 1 .or. mod(s%step, 10) == 0) then
@@ -521,7 +601,7 @@ contains
                            " K, ps(1,1)="//ftoa(s%ps(1, 1))//" Pa", ESMF_LOGMSG_INFO)
       end if
     end if
-  end subroutine Advance
+  end subroutine AdvancePhase2
 
   !> On the hour, the global area-weighted sum over all levels of every tracer slot but sphum as CATChem
   !! left it (sum of q x cell area, ESMF_VMAllFullReduce per tracer), one line per tracer on every PET: the evidence
@@ -614,20 +694,24 @@ contains
     end if
   end subroutine record_hosted
 
-  !> Exports carry the step-start stamp (CECE's convention) so CATChem's default CheckImport, which runs
-  !! after MET in the same step, finds them at its current time.
-  subroutine TimestampExport(model, rc)
+  !> After phase1: the generic run phase has advanced the model clock to the step end. Set it back to the
+  !! driver's time, so phase2's default label_SetRunClock finds the two clocks in agreement, and stamp the exports
+  !! with that time, the step start (CECE's convention too), so CATChem's default CheckImport, which runs
+  !! between the two phases, finds them at its current time. The FV3 cap's TimestampExport_phase1
+  !! (UFSATM/ufsatm_cap.F90:1840-1866) does the same two things.
+  subroutine TimestampExportPhase1(model, rc)
     type(ESMF_GridComp) :: model
     integer, intent(out) :: rc
-    type(met_state), pointer :: s
+    type(ESMF_Clock) :: driverClock, modelClock
     type(ESMF_State) :: exportState
     rc = ESMF_SUCCESS
-    s => state_of(model, rc); if (rc /= ESMF_SUCCESS) return
-    call NUOPC_ModelGet(model, exportState=exportState, rc=rc)
+    call NUOPC_ModelGet(model, driverClock=driverClock, modelClock=modelClock, exportState=exportState, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
-    call NUOPC_SetTimestamp(exportState, s%step_start, rc=rc)
+    call NUOPC_CheckSetClock(modelClock, driverClock, forceCurrTime=.true., rc=rc)
+    if (ESMF_LogFoundError(rcToCheck=rc, msg="MET: resetting the model clock after "//PHASE1, line=__LINE__, file=__FILE__)) return
+    call NUOPC_SetTimestamp(exportState, modelClock, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
-  end subroutine TimestampExport
+  end subroutine TimestampExportPhase1
 
   subroutine Finalize(model, rc)
     type(ESMF_GridComp) :: model

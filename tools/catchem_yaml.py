@@ -271,8 +271,12 @@ class Simulation(Strict):
         description="Start as YYYYMMDD HHMM (informational: the cap runs on the driver's clock)."
     )
     end_date: str = Field(description="End as YYYYMMDD HHMM (informational).")
-    species_filename: str = Field(description="Absolute path of the species file.")
-    emission_filename: str = Field(description="Absolute path of the emission map.")
+    species_filename: str = Field(
+        description="The species file: an absolute path, or ./<name> in the run-directory layout."
+    )
+    emission_filename: str = Field(
+        description="The emission map: an absolute path, or ./<name> in the run-directory layout."
+    )
     verbose: Verbose = Field(description="Verbose logging switch.")
 
 
@@ -468,16 +472,14 @@ class ScienceConfig(Strict):
         path.write_text(yaml.safe_dump(self.to_mapping(), sort_keys=False))
 
 
-def science_config(
+def extemis_block(
     manifest: mf.Manifest,
     defaults: gd.GenDefaults,
     *,
-    species_file: Path,
-    emission_file: Path,
     source_files: bool = False,
     data_root: Path | None = None,
-) -> ScienceConfig:
-    """The science config for the manifest, point off.
+) -> Extemis:
+    """`processes.extemis` for the manifest, point off.
 
     By default every gridded category is import-fed (`source: nuopc_import`, no source_file); with
     `source_files` it is the file-path comparison run (`source: file`, the manifest's inventory paths).
@@ -507,6 +509,30 @@ def science_config(
             reverse_vertical=category.level_order == "top_down",
             diagnostics=cat_defaults.diagnostics,
         )
+    return Extemis(
+        activate=True,
+        global_diagnostics=False,
+        source="file" if source_files else "nuopc_import",
+        categories=categories,
+        inactive=inactive,
+        point=PointCategory(),
+    )
+
+
+def science_config(
+    manifest: mf.Manifest,
+    defaults: gd.GenDefaults,
+    *,
+    species_file: Path | str,
+    emission_file: Path | str,
+    source_files: bool = False,
+    data_root: Path | None = None,
+) -> ScienceConfig:
+    """The prototype's science config for the manifest: the defaults' processes plus `extemis_block`.
+
+    The two file names are written as given: absolute paths for a prototype run, `./<name>` for the
+    run-directory layout.
+    """
     return ScienceConfig(
         simulation=Simulation(
             name=defaults.prototype,
@@ -537,13 +563,31 @@ def science_config(
                 diagnostics=False,
                 scheme=defaults.seasalt_scheme,
             ),
-            extemis=Extemis(
-                activate=True,
-                global_diagnostics=False,
-                source="file" if source_files else "nuopc_import",
-                categories=categories,
-                inactive=inactive,
-                point=PointCategory(),
+            extemis=extemis_block(
+                manifest, defaults, source_files=source_files, data_root=data_root
             ),
         ),
     )
+
+
+def patched_science_config(base: Path, extemis: Extemis) -> dict[str, object]:
+    """A CATChem science config (the production file) with `processes.extemis` replaced and nothing else touched.
+
+    Key order is the base file's; its comments are lost (PyYAML). This is the file a weather-model test runs:
+    every process and diagnostic as in production, the emission inputs taken from NUOPC imports.
+    """
+    try:
+        loaded: object = yaml.safe_load(base.read_text())
+    except (OSError, yaml.YAMLError) as exc:
+        raise ConfigError(f"base science config {base}: {exc}") from exc
+    doc: dict[str, object] = dict(loaded) if isinstance(loaded, dict) else {}
+    processes = doc.get("processes")
+    if not isinstance(processes, dict) or "extemis" not in processes:
+        raise ConfigError(
+            f"base science config {base} has no processes.extemis block to replace"
+        )
+    doc["processes"] = {
+        name: extemis.to_mapping() if name == "extemis" else block
+        for name, block in processes.items()
+    }
+    return doc

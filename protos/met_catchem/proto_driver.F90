@@ -1,18 +1,21 @@
 !> The prototype driver (NUOPC_Driver), mirroring UFSDriver.F90's mechanics on an ESMF_Config of the
-!! ufs.configure shape: a component list (EARTH_component_list: any of CATCHEM, MET, CECE, in the order they
-!! are added), per-component PET lists and attribute blocks, and a runSeq:: block ingested with
-!! NUOPC_DriverIngestRunSequence. It reads the task-2 manifest for the clock and the fix-file paths, creates
-!! the cubed-sphere grid once with ESMF_GridCreateMosaic and attaches it to MET and CECE (CATChem takes its
-!! grid from the shared rank-4 tracer import). One DE per PET is enforced here, because the CATChem cap's own
-!! localDeCount check only logs and CECE's host-block path needs it too.
+!! ufs.configure shape: a component list (EARTH_component_list:, the labels in the order they are added;
+!! the weather model's are ATM, CHM and CECE), per label the model that plays it (<LABEL>_model: proto_met,
+!! catchem or cece, as UFSDriver selects fv3 or catchem), its PET list and attribute block, and a runSeq::
+!! block ingested with NUOPC_DriverIngestRunSequence. proto_met is MET, the analytic meteorology provider
+!! standing in for the FV3 cap. It reads the task-2 manifest for the clock and the fix-file paths, creates
+!! the cubed-sphere grid once with ESMF_GridCreateMosaic and attaches it to MET only. CATChem takes its grid
+!! from the shared rank-4 tracer import, and CECE from the same field of MET (CECE_SetHostGeometry), as both
+!! will from the ATM cap in the ufs-weather-model, where the driver never holds the grid. One DE per PET is
+!! enforced here, because CECE's host-block path needs it.
 module proto_driver
   use ESMF
   use NUOPC
   use NUOPC_Driver, only: driverSS => SetServices, label_SetModelServices, label_SetRunSequence, &
                           NUOPC_DriverAddComp, NUOPC_DriverIngestRunSequence, NUOPC_DriverPrint
   use cc_nuopc, only: catchem_SS => SetServices, catchem_SV => SetVM, cc_nuopc_set_config_file, cc_nuopc_set_field_mapping_file
-  use cece_cap_mod, only: cece_SS => CECE_SetServices, CECE_SetConfigPath
-  use proto_met, only: met_SS => SetServices, proto_met_configure
+  use cece_cap_mod, only: cece_SS => CECE_SetServices, CECE_SetConfigPath, CECE_SetHostGeometry
+  use proto_met, only: met_SS => SetServices, proto_met_configure, TRACER_FIELD
   use proto_totals, only: hosted_spec
   use proto_manifest
   implicit none
@@ -45,17 +48,19 @@ contains
     type(ESMF_Time) :: stop_time
     type(ESMF_TimeInterval) :: step, duration
     type(ESMF_Grid) :: grid
-    type(ESMF_GridComp) :: child
+    type(ESMF_GridComp) :: child, met_comp
     type(proto_manifest_type) :: m
     type(hosted_spec), allocatable :: hosted(:)
     character(len=ESMF_MAXPATHLEN) :: manifest, data_root, catchem_config, cece_config, mapping
-    character(len=ESMF_MAXSTR), allocatable :: comp_labels(:)
+    character(len=ESMF_MAXSTR), allocatable :: comp_labels(:), comp_models(:)
+    character(len=ESMF_MAXSTR) :: met_label
     character(len=32) :: grid_source
     character(len=:), allocatable :: mosaic, fix_dir
     character(len=ESMF_MAXSTR) :: msg
     integer :: pet_count, local_pet, per_tile, local_de_count, tile_count, tile_size, t, n_comps, i
     integer :: reg_decomp(2, N_TILES), decomp(2)
-    logical :: have_decomp
+    type(ESMF_Decomp_Flag) :: decomp_flags(2, N_TILES)
+    logical :: have_decomp, have_met, have_cece
 
     rc = ESMF_SUCCESS
     call ESMF_GridCompGet(driver, config=config, vm=vm, rc=rc)
@@ -68,8 +73,12 @@ contains
     if (ESMF_LogFoundError(rcToCheck=rc, msg="config key 'manifest:' missing", line=__LINE__, file=__FILE__)) return
     call ESMF_ConfigGetAttribute(config, data_root, label="data_root:", default=".", rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
-    call ESMF_ConfigGetAttribute(config, mapping, label="catchem_field_mapping_file:", rc=rc)
-    if (ESMF_LogFoundError(rcToCheck=rc, msg="config key 'catchem_field_mapping_file:' missing", line=__LINE__, file=__FILE__)) return
+    ! The three path keys default to the names a weather-model run directory holds (the CATChem cap's own
+    ! defaults, and the name UFSDriver will pass to CECE_SetConfigPath), so a configure file without them,
+    ! like the weather model's, runs from a staged directory (ESMF_refdoc 48.3.10: default= applies when the
+    ! label is not found).
+    call ESMF_ConfigGetAttribute(config, mapping, label="catchem_field_mapping_file:", default="CATChem_field_mapping.yml", rc=rc)
+    if (ESMF_LogFoundError(rcToCheck=rc, msg="config key 'catchem_field_mapping_file:'", line=__LINE__, file=__FILE__)) return
     call ESMF_ConfigFindLabel(config, "regdecomp_per_tile:", isPresent=have_decomp, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
     ! the component list, the UFSDriver way (ESMF_ConfigGetLen, then the value list)
@@ -82,6 +91,20 @@ contains
     allocate (comp_labels(n_comps))
     call ESMF_ConfigGetAttribute(config, valueList=comp_labels, label="EARTH_component_list:", count=n_comps, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg="config key 'EARTH_component_list:' unreadable", line=__LINE__, file=__FILE__)) return
+    ! the model behind each label, the UFSDriver way (<LABEL>_model:)
+    allocate (comp_models(n_comps))
+    do i = 1, n_comps
+      call ESMF_ConfigGetAttribute(config, comp_models(i), label=trim(comp_labels(i))//"_model:", rc=rc)
+      if (ESMF_LogFoundError(rcToCheck=rc, msg="config key '"//trim(comp_labels(i))//"_model:' missing", line=__LINE__, file=__FILE__)) return
+      select case (trim(comp_models(i)))
+      case ("proto_met", "catchem", "cece")
+      case default
+        call fail(local_pet, "driver: unknown model '"//trim(comp_models(i))//"' in "//trim(comp_labels(i))// &
+                  "_model: (proto_met, catchem, cece)", rc)
+        return
+      end select
+    end do
+    have_cece = any(comp_models == "cece")
     call read_hosted_imports(config, hosted, rc); if (rc /= ESMF_SUCCESS) return
 
     ! --- the manifest: clock and fix files ---
@@ -119,10 +142,15 @@ contains
     do t = 1, N_TILES
       reg_decomp(:, t) = decomp
     end do
+    ! FV3's decomposition rule, so a layout that does not divide the tile evenly splits as the ATM cap's
+    ! fcst_grid does (UFSATM/fv3/module_fcst_grid_comp.F90:232-241: decompflagPTile SYMMEDGEMAX in both
+    ! dimensions of every tile; ESMF's default is BALANCED, ESMF_refdoc 55.14). With one or two DEs along a
+    ! dimension of an even tile size the two rules give the same split.
+    decomp_flags = ESMF_DECOMP_SYMMEDGEMAX
     ! CECE's host-block path needs a closed corner ring per DE, i.e. one DE per tile: with several, the PETs
     ! whose block does not reach the tile's upper edges fail inside CECE's initialize while the others wait in
     ! a collective (a hang). Refuse it here, on every PET, before any component starts. Corner halo: task 9.
-    if (per_tile > 1 .and. any(comp_labels == "CECE")) then
+    if (per_tile > 1 .and. have_cece) then
       write (msg, '(a,i0,a,i0,a)') "met_catchem: CECE needs one DE per tile (6 PETs), got ", per_tile, &
         " per tile (", pet_count, " PETs); its host-block path has no corner halo yet"
       call fail(local_pet, trim(msg), rc)
@@ -137,7 +165,7 @@ contains
     case ("mosaic")
       mosaic = join_path(trim(data_root), trim(m%mosaic))
       fix_dir = join_path(trim(data_root), trim(m%fix_directory))//'/'
-      grid = ESMF_GridCreateMosaic(filename=mosaic, regDecompPTile=reg_decomp, tileFilePath=fix_dir, &
+      grid = ESMF_GridCreateMosaic(filename=mosaic, regDecompPTile=reg_decomp, decompflagPTile=decomp_flags, tileFilePath=fix_dir, &
                                    staggerLocList=(/ESMF_STAGGERLOC_CENTER, ESMF_STAGGERLOC_CORNER/), name=trim(m%resolution), rc=rc)
       if (ESMF_LogFoundError(rcToCheck=rc, msg="driver: ESMF_GridCreateMosaic "//mosaic, line=__LINE__, file=__FILE__)) return
     case ("analytic")
@@ -146,7 +174,8 @@ contains
         call fail(local_pet, "met_catchem: cannot read the tile size from resolution '"//trim(m%resolution)//"'", rc)
         return
       end if
-      grid = ESMF_GridCreateCubedSphere(tileSize=tile_size, regDecompPTile=reg_decomp, coordSys=ESMF_COORDSYS_SPH_DEG, &
+      grid = ESMF_GridCreateCubedSphere(tileSize=tile_size, regDecompPTile=reg_decomp, decompflagPTile=decomp_flags, &
+                                        coordSys=ESMF_COORDSYS_SPH_DEG, &
                                         staggerLocList=(/ESMF_STAGGERLOC_CENTER, ESMF_STAGGERLOC_CORNER/), name=trim(m%resolution)//"_analytic", rc=rc)
       if (ESMF_LogFoundError(rcToCheck=rc, msg="driver: ESMF_GridCreateCubedSphere", line=__LINE__, file=__FILE__)) return
       call ESMF_LogWrite("driver: grid_source analytic (ESMF_GridCreateCubedSphere, debug mode; the prototype's grid is the mosaic)", &
@@ -167,34 +196,50 @@ contains
     call ESMF_LogWrite(trim(msg), ESMF_LOGMSG_INFO)
     if (local_pet == 0) print '(a)', trim(msg)
 
-    ! --- components, in the order of EARTH_component_list (Advertise runs in that order); the grid goes
-    !     to MET and CECE, never to CATChem ---
+    ! --- components, in the order of EARTH_component_list (every initialize phase runs in that order); the
+    !     grid goes to MET only ---
+    have_met = .false.
     call cc_nuopc_set_field_mapping_file(trim(mapping))
     call proto_met_configure(trim(manifest), trim(data_root), trim(mapping), hosted)
     do i = 1, n_comps
-      select case (trim(comp_labels(i)))
-      case ("CATCHEM")
-        call ESMF_ConfigGetAttribute(config, catchem_config, label="catchem_config_file:", rc=rc)
-        if (ESMF_LogFoundError(rcToCheck=rc, msg="config key 'catchem_config_file:' missing (CATCHEM is listed)", line=__LINE__, file=__FILE__)) return
+      select case (trim(comp_models(i)))
+      case ("catchem")
+        call ESMF_ConfigGetAttribute(config, catchem_config, label="catchem_config_file:", default="CATChem_new_config.yml", rc=rc)
+        if (ESMF_LogFoundError(rcToCheck=rc, msg="config key 'catchem_config_file:'", line=__LINE__, file=__FILE__)) return
         call cc_nuopc_set_config_file(trim(catchem_config))
-        call add_component(driver, config, "CATCHEM", pet_count, child, rc, catchem_SS, catchem_SV); if (rc /= ESMF_SUCCESS) return
-      case ("MET")
-        call add_component(driver, config, "MET", pet_count, child, rc, met_SS); if (rc /= ESMF_SUCCESS) return
+        call ESMF_LogWrite("driver: CATChem config "//trim(catchem_config)//", field mapping "//trim(mapping), ESMF_LOGMSG_INFO)
+        call add_component(driver, config, trim(comp_labels(i)), pet_count, child, rc, catchem_SS, catchem_SV); if (rc /= ESMF_SUCCESS) return
+      case ("proto_met")
+        call add_component(driver, config, trim(comp_labels(i)), pet_count, child, rc, met_SS); if (rc /= ESMF_SUCCESS) return
         call ESMF_GridCompSet(child, grid=grid, rc=rc)
         if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
-      case ("CECE")
-        call ESMF_ConfigGetAttribute(config, cece_config, label="cece_config_file:", rc=rc)
-        if (ESMF_LogFoundError(rcToCheck=rc, msg="config key 'cece_config_file:' missing (CECE is listed)", line=__LINE__, file=__FILE__)) return
+        met_comp = child
+        met_label = comp_labels(i)
+        have_met = .true.
+      case ("cece")
+        call ESMF_ConfigGetAttribute(config, cece_config, label="cece_config_file:", default="cece.yaml", rc=rc)
+        if (ESMF_LogFoundError(rcToCheck=rc, msg="config key 'cece_config_file:'", line=__LINE__, file=__FILE__)) return
+        call ESMF_LogWrite("driver: CECE config "//trim(cece_config), ESMF_LOGMSG_INFO)
         call CECE_SetConfigPath(trim(cece_config), rc)
         if (ESMF_LogFoundError(rcToCheck=rc, msg="CECE_SetConfigPath "//trim(cece_config), line=__LINE__, file=__FILE__)) return
-        call add_component(driver, config, "CECE", pet_count, child, rc, cece_SS); if (rc /= ESMF_SUCCESS) return
-        call ESMF_GridCompSet(child, grid=grid, rc=rc)
-        if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
-      case default
-        call fail(local_pet, "driver: unknown component '"//trim(comp_labels(i))//"' in EARTH_component_list (CATCHEM, MET, CECE)", rc)
-        return
+        call add_component(driver, config, trim(comp_labels(i)), pet_count, child, rc, cece_SS); if (rc /= ESMF_SUCCESS) return
       end select
     end do
+
+    ! CECE's grid is the grid of MET's realized tracer field, the ESMF_Grid object CATChem also gets through
+    ! reference sharing. Named here, after every component is added; the cap reads the field at the start of
+    ! its realize phase and fails by name when MET does not precede CECE in the list (that order is the cap's
+    ! to check: the driver only names the source).
+    if (have_cece) then
+      if (.not. have_met) then
+        call fail(local_pet, "driver: a cece component needs a proto_met component in EARTH_component_list (its grid comes "// &
+                  "from that component's "//TRACER_FIELD//")", rc)
+        return
+      end if
+      call CECE_SetHostGeometry(met_comp, TRACER_FIELD, rc)
+      if (ESMF_LogFoundError(rcToCheck=rc, msg="CECE_SetHostGeometry "//trim(met_label)//"/"//TRACER_FIELD, line=__LINE__, file=__FILE__)) return
+      call ESMF_LogWrite("driver: CECE takes its grid from "//trim(met_label)//"/"//TRACER_FIELD, ESMF_LOGMSG_INFO)
+    end if
   end subroutine SetModelServices
 
   !> The optional `met_hosted_imports::` table: one row per field MET hosts as a reference-shared import,

@@ -166,11 +166,18 @@ def stream_timing(
 
 
 def stream_file(
-    name: str, category: mf.Category, data_root: Path, windows: Mapping[Path, Path]
+    name: str,
+    category: mf.Category,
+    data_root: Path | None,
+    windows: Mapping[Path, Path],
 ) -> Path:
-    """The one file CECE reads for the category: the generator's window file for a daily series, else the inventory."""
+    """The one file CECE reads for the category: the generator's window file for a daily series, else the inventory.
+
+    Without a data root the manifest's path is written as it is (the run-directory layout, where the paths are
+    already relative to the directory CECE runs in).
+    """
     if category.cadence != "daily":
-        return rooted(category.file, data_root)
+        return category.file if data_root is None else rooted(category.file, data_root)
     window = windows.get(category.file)
     if window is None:
         raise ValueError(
@@ -181,7 +188,7 @@ def stream_file(
 
 def cece_config(
     manifest: mf.Manifest,
-    data_root: Path,
+    data_root: Path | None,
     amio: gd.CeceAmio,
     omit: frozenset[tuple[str, str]] = frozenset(),
     windows: Mapping[Path, Path] | None = None,

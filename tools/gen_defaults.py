@@ -16,6 +16,8 @@ from tools.manifest import Strict
 
 ApplyMethod = Literal["add", "replace"]
 TimeInterpolation = Literal["linear", "none"]
+# The one run-sequence line the prototype has and the weather model does not: it feeds ATM's hosted totals.
+TOTALS_CONNECTOR = "CECE -> ATM"
 
 
 class EmissionMapVariable(Strict):
@@ -116,6 +118,60 @@ class CeceAmio(Strict):
     )
 
 
+class WmComponent(Strict):
+    label: str = Field(
+        description="The component's label in the weather model's ufs.configure (ATM, CHM, CECE)."
+    )
+    placeholder: str = Field(
+        description=(
+            "Stem of the component's atparse placeholders: @[<stem>_model], @[<stem>_petlist_bounds] and "
+            "@[<stem>_omp_num_threads], filled by the weather model's regression-test scripts."
+        )
+    )
+
+
+class WmDriver(Strict):
+    """The weather model's driver configuration with CECE in it (tests/parm/ufs.configure.atmaero_cece.IN)."""
+
+    components: list[WmComponent] = Field(
+        description="EARTH_component_list in order; the host of CECE's grid (ATM) precedes CECE.",
+        min_length=1,
+    )
+    run_sequence: list[str] = Field(
+        description="Lines of runSeq:: inside the @@[coupling_interval_sec] loop, in order.",
+        min_length=1,
+    )
+
+    @model_validator(mode="after")
+    def _lines_name_listed_components(self) -> WmDriver:
+        ordered = [c.label for c in self.components]
+        labels = set(ordered)
+        if len(labels) != len(ordered):
+            raise ValueError(
+                f"wm_driver components {ordered} name a component more than once"
+            )
+        # CECE takes its grid from ATM's realized tracer field and the driver initializes in list order
+        # (the rule DriverConfig holds for the prototype's own driver file).
+        if "CECE" in labels and (
+            "ATM" not in labels or ordered.index("ATM") > ordered.index("CECE")
+        ):
+            raise ValueError(
+                f"wm_driver components {ordered}: list ATM before CECE (CECE's grid comes from ATM's tracer field)"
+            )
+        for line in self.run_sequence:
+            names = (
+                [part.strip() for part in line.split("->")]
+                if "->" in line
+                else [line.split()[0]]
+            )
+            for name in names:
+                if name not in labels:
+                    raise ValueError(
+                        f"wm_driver run_sequence line {line!r} names a component outside {sorted(labels)}"
+                    )
+        return self
+
+
 class GenDefaults(Strict):
     prototype: str = Field(
         description="The run's name: `prototype:` of the driver config and the science config's simulation name."
@@ -156,3 +212,23 @@ class GenDefaults(Strict):
     categories: dict[str, CategoryDefaults] = Field(
         description="Per-category CATChem settings and emission map, by manifest category name."
     )
+    wm_driver: WmDriver | None = Field(
+        default=None,
+        description=(
+            "The weather model's driver configuration this set is destined for, written as "
+            "ufs.configure.atmaero_cece.IN in the run-directory layout; null when the set has none."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _wm_sequence_is_the_prototypes(self) -> GenDefaults:
+        # The prototype runs the weather model's sequence plus the connector that feeds ATM's hosted totals,
+        # so the template pushed to the weather model and the sequence the ci runs execute cannot drift apart.
+        if self.wm_driver is not None:
+            ours = [line for line in self.run_sequence if line != TOTALS_CONNECTOR]
+            if ours != self.wm_driver.run_sequence:
+                raise ValueError(
+                    f"wm_driver.run_sequence {self.wm_driver.run_sequence} must equal run_sequence without "
+                    f"`{TOTALS_CONNECTOR}` ({ours})"
+                )
+        return self

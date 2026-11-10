@@ -174,6 +174,22 @@ class Settings(BaseSettings):
         default="esm.configure",
         description="Name of the emitted driver configuration under --out.",
     )
+    field_dictionary_fragment_filename: str = Field(
+        default="fd_extemis.yaml",
+        description="Name of the emitted field-dictionary fragment (the emission entries alone) in the run-directory layout.",
+    )
+    wm_driver_filename: str = Field(
+        default="ufs.configure.atmaero_cece.IN",
+        description="Name of the emitted weather-model driver template in the run-directory layout.",
+    )
+    wm_run_configure_filename: str = Field(
+        default="ufs.configure",
+        description="Name of the driver configuration tools/stage_wm_run.py writes in a staged run directory (the filled weather-model template plus the prototype-only keys).",
+    )
+    wm_run_marker_filename: str = Field(
+        default=".wm_run_staged",
+        description="Marker file of a run directory tools/stage_wm_run.py staged; only a directory holding it (or an empty one) is replaced.",
+    )
     gen_record_filename: str = Field(
         default="gen_configs_manifest.yaml",
         description="Name of the record the generator writes under --out (what was generated from which manifest).",

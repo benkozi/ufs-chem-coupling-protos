@@ -90,7 +90,11 @@ tools/ci.sh test ci
 tools/ci.sh test c96
 ```
 
-A third word onward is passed to ctest (`tools/ci.sh test ci -R proto_met_catchem$`). The fix files live in a BuildKit cache mount on the builder (`id=protos-data`), so the EMC download happens once per node; on failure the step prints the ESMF log errors of the prototype run directories. The image people run is still `final` (`compose.yaml` pins `target: final`).
+```bash
+tools/ci.sh test wm
+```
+
+(`wm`: the checked-in weather-model set run as it is, end of section 16; 336 s and 1.44 GB per PET, kept out of `ci`. `tools/ci.sh test "ci|wm"` runs both labels in one build.) A third word onward is passed to ctest (`tools/ci.sh test ci -R proto_met_catchem$`). The fix files live in a BuildKit cache mount on the builder (`id=protos-data`), so the EMC download happens once per node; on failure the step prints the ESMF log errors of the prototype run directories. The image people run is still `final` (`compose.yaml` pins `target: final`).
 
 | Job | Command inside the container |
 | --- | --- |
@@ -106,8 +110,8 @@ On the Mac, outside the container: `uv sync --frozen`, `uv run pre-commit run --
 
 | Path | Repository | Branch | Pinned commit |
 | --- | --- | --- | --- |
-| `extern/CATChem` | `https://github.com/bbakernoaa/CATChem.git` | `feature/rework` | `84532349` |
-| `extern/CECE` | `https://github.com/benkozi/CECE.git` (fork of `ufs-community/CECE`) | `feature/multi-tile-host-decomp` (task 4, cut from upstream `develop` `25f7209`; section 10) | the branch tip |
+| `extern/CATChem` | `https://github.com/benkozi/CATChem.git` (fork of `ufs-community/CATChem`) | `feature/cece-coupling-proto` (task 5, cut from upstream `develop` `b22dc16`; sections 11 and 14) | `df9b41a2` |
+| `extern/CECE` | `https://github.com/benkozi/CECE.git` (fork of `ufs-community/CECE`) | `feature/multi-tile-host-decomp` (task 4, cut from upstream `develop` `25f7209`; section 10) | `7aea59b` (issue 16: `d22e8d4` adds `CECE_SetHostGeometry`, ufs-community/CECE#166; `7aea59b` its harness cases, docs and a format fix on the parent-grid path) |
 
 `extern/CECE` carries `extern/helm` (NOAA-EMC/HELM) and `extern/yaml-cpp`; `extern/CATChem` carries `src/external/GOCART` and `src/external/musica` (unused with `CATCHEM_BUILD_MUSICA=OFF`).
 
@@ -938,6 +942,8 @@ uv run python -m tools.make_mock_data --resolution C48 --out data/C48_realistic 
 
 writes the 20 files under `data/C48_realistic/ExtData/<real relative path>` (its own directory: the analytic set's `manifest.yaml` and `inventories/totals.yaml` under `data/C48` are what the generator and conservation tests read, and the first cloud run of the fixture into `data/C48` overwrote them, failing 14 `ci` tests) (one file per calendar day for daily categories, the CEDS file written once with the ten variables of `anthro1`, `anthro2` and `ship`), copies the volcanic tables from `tools/defaults/extdata/volcanic/`, and records the coarsened grids in `manifest.yaml` (the factor rounds the cell counts and keeps the extent, so 4444 x 2222 becomes 444 x 222 and pole-centred grids keep their polar centres). Measured here: 1.5 s, 20 MB at factor 10. The resolution is the performance lever for the generation and for CECE's ingest: CTest registers `make_mock_data_realistic` (`ci`, factor 10, fixture `mockdata_realistic`), `gen_configs_realistic` (`ci`, section 16; it replaced `gen_configs_realistic_refused`, which held the generator's refusal of the realistic manifest until issue #18) and `make_mock_data_realistic_c96` (`c96`, factor 5, 0.5°; the real 0.1° sizes are `--grid-factor 1` by hand, about 4.5 GB), all behind `if(EXISTS tools/defaults/manifest_realistic.yaml)` in `tests/mockdata/CMakeLists.txt`.
 
+The realistic profile also writes the six GOCART optics tables CATChem's production science config names in its `mie:` section (`ExtData/monochromatic/optics_{SS.v3_3,DU.v15_3,BC.v1_3,OC.v1_3,NI.v2_5,SU.v1_3}.nc`), because the settling scheme (`gocart/simple_scheme`) refuses to initialize without them: `Settling optics directory is not a readable directory: './ExtData/monochromatic/'`, and with the `mie` section removed `Settling gocart/simple_scheme requires a non-empty 'mie.files' section`. The real tables are 74 to 317 MB each, nearly all of it the phase-function moments (`pmom`, `pback`) the settling scheme never reads. `tools/optics.py` writes synthetic ones from the scrape (`extdata_headers.json`, role `optics`): the real file's data model (`NETCDF3_CLASSIC`), dimensions (`nMom` shrunk to one entry), variables, types and attributes, without the two moment variables; `rh` from 0 to 0.99, `lambda` from 0.25 to 40 micrometres, dry radii from the smallest scraped `rEff` to the geometric middle of its range, a growth factor rising with humidity (to the scraped maximum where the table has `growth_factor`, never past the scraped `rEff` maximum), a wet density falling from the scraped dry value toward water, and the scraped mean for every other variable (`bext`, `bsca`, `bbck`, `g`, `qext`, `qsca`, `rMass`, `refreal`, `refimag`). No random numbers; six files, 2.0 MB together; they are not in the manifest, which describes the emission inventories. They let the production configuration run; their optical values are not physical results. What `GOCART2G_MieMod` requires of a table (`extern/CATChem/src/external/GOCART/Process_Library/GOCART2G_MieMod.F90:191-259`): dimensions `rh`, `lambda`, `radius`; variables `lambda`, `rEff`, `bext`, `bsca`, `bbck`, `g`, `rh`; `pback`, `growth_factor`, `rhop`, `refreal` and `refimag` are optional.
+
 ### Schema additions (`tools/manifest.py`)
 
 `Cadence` gains `daily`, `RegridMethod` `neareststod`, `CeceMapalgo` `nn`; `LatLonGrid.pole_centred` and `LatLonGrid.coarsened(factor)` (rounding, any factor); `Category.layout: FileLayout` (`format`, `model`, `lon_name`, `lat_name`, `lev_name`, `time_name`, `dtype`, `fill_value`, `lev_before_time`, `write_bounds_and_area`, `daily_record_hour`, `time_dimension`, `lev_values`, `lev_units`, `time_axis: ExplicitTimeAxis {units, calendar, values}`); several categories may share a file (same grid, cadence, levels and layout, distinct variable names) and any category name is allowed (the generator's defaults still decide what `gen_configs.py` accepts). `CategoryTotals.files` lists every file written for a category. Settings: `extdata_defaults_dir`, `file_catalog_filename`, `extdata_headers_filename`, `volcanic_dirname`, `realistic_defaults_file` (`PROTOS_REALISTIC_DEFAULTS`).
@@ -1047,3 +1053,151 @@ What the run showed (2026-11-09, cloud builder): CECE's `nn` regrid passes the f
 Not reproduced, by decision or for lack of a fact: whether the real `ExtData` tree holds the neighbouring days (the production log opened no 21 March file; CATChem falls back to the current day's file when a neighbour is missing, the window step here stops by name); the sentinel 999 in the real `uthres` (it inflates the scraped mean the synthetic background is taken from); GMI's `limit` is right for 2021 only (the production config pins the 2021 file for any year).
 
 Measured for the follow-up (2026-11-09, cloud builder): `uv run pytest tools/tests` 235 passed at 100 % coverage; the realistic run 75.4 s for 120 steps, 935 MB per PET at the end; the whole `ci` label 34 of 34 in 219.3 s.
+
+### The checked-in weather-model set, run as it is (issue #16, label `wm`)
+
+The sync test proves `configs/wm/catchem_cece_control/` is what the generator writes; this run proves the files run. `tools/stage_wm_run.py` stages a run directory the way a weather-model regression test would, and the prototype runs in it:
+
+```bash
+uv run python -m tools.stage_wm_run --set configs/wm/catchem_cece_control --out build/protos/cece_met_catchem/run_wm_catchem_cece_control_np6 --manifest data/C48_realistic/manifest.yaml --extdata data/C48_realistic/ExtData --streams build/gen/C48_realistic/streams
+```
+
+```bash
+tools/ci.sh test wm
+```
+
+- **Staged:** the five YAML files of the set copied unmodified; `CATChem_species.yml` copied from the CATChem submodule; `ExtData` and `streams` linked (the realistic mock data and the window files `gen_configs_realistic` writes); `fd.yaml`, the prototype's base dictionary with `fd_extemis.yaml` appended; `ufs.configure`, the set's `ufs.configure.atmaero_cece.IN` with its placeholders filled (`proto_met`, `catchem`, `cece`, PET bounds `0 5`, one thread, `ESMF_LOGKIND_MULTI`, the manifest's coupling step) followed by a delimited block of the five keys only the prototype driver reads (`prototype:`, `manifest:`, `data_root:`, `field_dictionary:`, `grid_source:`). The tool replaces only an empty directory or one it staged (marker `.wm_run_staged`); `--verify` compares a directory with the set again. `--pets` must be a multiple of six (exit 2 otherwise, as in the generator), and the tool runs from any working directory: the species file and the base dictionary resolve against the repository root.
+- **Driver:** `catchem_config_file:`, `catchem_field_mapping_file:` and `cece_config_file:` are now optional and default to `CATChem_new_config.yml`, `CATChem_field_mapping.yml` and `cece.yaml` in the run directory, so the weather model's configure file needs no prototype path key. No `met_hosted_imports::`, so the run sequence is the pushed one line for line, and there is no conservation check (the realistic run keeps those).
+- **What runs:** CATChem's production science config, all seven processes (`seasalt`, `dust`, `carbchem`, `settling`, `drydep`, `so4chem`, `wetdep`), on the analytic meteorology with the manifest's fifteen host tracers, the optics tables of section 15, 120 steps at C48 on 6 PETs. `grid.number_of_levels: 64` and the 2024 dates in the production file do no harm: the cap takes levels and clock from the host.
+- **Tests (`wm`):** `stage_wm_catchem_cece_control`; `proto_wm_catchem_cece_control` (passes on `wm_catchem_cece_control: completed 120 steps`; stdout to `wm_stdout.txt`, mpiexec's status to `wm_exit_status.txt`); `exit_wm_catchem_cece_control` (the status is 0) with its failure case `exit_wm_nonzero_fails` (also `ci`); `stdout_wm_catchem_cece_control` (no `CATChem ERROR`, no `ERROR LOCATION`, no invalid wavelength, no double free, no signal); `verify_wm_catchem_cece_control` (the directory still holds the set unmodified after the run); `log_wm_catchem_cece_control` (the realistic log evidence without the hosted imports, the driver's default file names, no ERROR line in a PET log, at most 1.7 GB per PET).
+
+Measured on the cloud builder, 2026-11-10 (`tools/ci.sh test "ci|wm"`, 46 of 46 passed: the 40 `ci` tests and the 6 that carry `wm` only; `exit_wm_nonzero_fails` carries both labels): the run takes 336 s (74 s for the realistic run), 0.52 GB per PET after initialize and 1.44 GB at the end (0.93 GB), exit status 0, `wm_stdout.txt` 1.0 MB without an error line. It is kept out of `ci` for its run time.
+
+Two defects the first registered run (2026-11-10) exposed, both fixed:
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| after `completed 120 steps` every process aborted: `double free or corruption (!prev)`, signal 6, mpiexec status 134 | `esmApp` held ESMF twice. FindESMF (the weather model's module) prefers the static `libesmf.a`; CECE's `libcece_driver.so` and `libcece_core.so` are linked against `libesmf.so`. The shared library's references resolve to the executable's copy, both copies register a destructor for the same global, and a non-empty one is freed twice at exit: the backtrace is `~vector<MPI_Datatype>` (`ESMCI::VMK::customType`) called from `__cxa_finalize` in `libesmf.so`'s finalizer (symbolized on a non-PIE link with `LD_DEBUG=files` load maps). The other prototype runs carried the same two copies and exited cleanly, presumably because that vector stayed empty | the top-level `CMakeLists.txt` points the `esmf` target at `libesmf.so` when the installation has one (`ESMF linked shared: ...` at configure); every executable of the repository now links one shared ESMF. The same hazard exists in any executable that links `libesmf.a` and loads a CECE built as shared libraries against `libesmf.so` |
+| the run completed, but stdout held 1.66 million `CATChem ERROR: Error in running GOCART Chem_SettlingSimple scheme` blocks (`wavelength of 5.5000000000000003E-007 is an invalid value`), 624 MB, and memory reached 3.40 GB per PET | the first synthetic optics tables had no 550 nm channel; GOCART looks a wavelength up by exact match within 1e-9 m (`GOCART2G_MieMod` `getChannel`). CATChem reports a failing process on stdout and carries on, and nothing reaches the PET logs | `tools/optics.py` puts 550 nm on the wavelength axis; `stdout_wm_catchem_cece_control` forbids the error lines, because a completed run proves nothing about its processes without it |
+
+## 17. Alignment with the weather model (issue #16)
+
+The prototype now has the shape the coupling takes in the ufs-weather-model: the driver holds no grid for CECE, the components carry the weather model's labels, the meteorology provider runs in the weather model's two phases, and the configuration files a regression test would stage are checked in, compared with what the generator writes, and run as they are. The companion change in CECE is the host-geometry source (ufs-community/CECE#166, `extern/CECE` `d22e8d4` and `7aea59b`, section 5).
+
+### Where CECE's grid comes from
+
+The CECE cap has three grid sources, tried in this order (`extern/CECE/docs/driver_configuration.md`):
+
+| Source | How it is named | Log line | Who uses it |
+| --- | --- | --- | --- |
+| a field of another component | `call CECE_SetHostGeometry(host_comp, field_name, rc)` before CECE initializes | `[Cap] grid source: host field <host>/<field> (tileCount=<n>, local DE <d> of tile <t>)` and `[Cap] Host grid block: ... (48x48), corners 49x49` | every prototype run with CECE; the weather model |
+| a grid attached to the CECE component | `ESMF_GridCompSet(cece, grid=...)` | `[Cap] Parent grid: ...` | the prototypes before this task |
+| the grid block of `cece.yaml` | nothing | `[Cap] No parent grid or mesh ...` | CECE standalone |
+
+`proto_driver.F90` calls `CECE_SetHostGeometry(met_comp, "inst_tracer_mass_frac", rc)` once, after every component is added, and no longer attaches the grid to CECE: the grid goes to the meteorology provider only, CATChem gets it through the reference-shared tracer import, and CECE reads it from the provider's realized export field at the start of its own realize phase. That works in one initialization because a NUOPC driver runs each initialize phase over its children in the order they were added (`NUOPC_Driver.F90:2722-2812`) and a sibling's export state is reachable through its component handle; geometry transfer could not deliver a grid to a provider in the same pass (NUOPC_refdoc 2.4.7). Naming both a host field and an attached grid is an error (`[Cap] both a parent grid on the component and a host ...`); a second call replaces the first (`[Cap] host geometry source replaced: <old> -> <new>`). The host-block path still needs one DE per PET and a closed corner ring (CECE#163), so the driver keeps refusing 12 PETs when CECE is listed.
+
+**Order rule:** the host precedes CECE in `EARTH_component_list:`. The generator refuses a list that breaks it (`list ATM before CECE (CECE's grid comes from ATM's tracer field)`); a hand-written file that breaks it stops in CECE's initialize with the cap's message, `... of <host> is not realized; the host must precede CECE ...` (`proto_cece_met_bad_order_fails`, `log_cece_met_bad_order`). A CECE component without a `proto_met` component is refused by the driver by name.
+
+### Decomposition
+
+The driver passes `decompflagPTile = ESMF_DECOMP_SYMMEDGEMAX` in both dimensions of every tile to `ESMF_GridCreateMosaic` and `ESMF_GridCreateCubedSphere`, as the FV3 cap's forecast grid does (`UFSATM/fv3/module_fcst_grid_comp.F90:232-241`); ESMF's default is `BALANCED` (ESMF_refdoc 55.14). With one or two DEs along a dimension of an even tile size the two rules split alike, so no registered run exercises the difference.
+
+### Labels and model keys
+
+| Was | Is | Not renamed |
+| --- | --- | --- |
+| `MET` | `ATM` | the `MET: ` log prefix, `met_hosted_imports::`, `proto_met.F90`, the prototype and test names, CATChem's `MET_*` field names |
+| `CATCHEM` | `CHM` | the `CATChem: ` log prefix, file and test names |
+| `CECE` | `CECE` | |
+
+The driver selects a component by `<LABEL>_model:` (`proto_met`, `catchem`, `cece`), as UFSDriver does (`CHM_model: catchem`), and knows no label itself: an unknown model is a named failure, an unknown label is not. The generator accepts `ATM`, `CHM` and `CECE` only (`tools/driver_config.py` `COMPONENT_MODELS`).
+
+### Run sequence and the two ATM phases
+
+```
+runSeq::
+  @720
+    ATM phase1
+    CECE
+    ATM -> CHM
+    CECE -> CHM
+    CHM
+    CHM -> ATM
+    CECE -> ATM
+    ATM phase2
+  @
+::
+```
+
+This is the weather model's `atmaero` sequence with CECE in it; `CECE -> ATM` is the one line the weather model does not have (it feeds the hosted imports the conservation checks read) and the checked-in template omits it. `proto_met.F90` registers the run phases `phase1` and `phase2` with `NUOPC_CompSetEntryPoint(ESMF_METHOD_RUN, phaseLabelList=..., userRoutine=routine_Run)` and then specializes each (`specPhaseLabel=`); the entry-point call is marked deprecated (NUOPC_refdoc 3.6.39) but is the only way to add a run phase, and the FV3 cap does the same.
+
+- **`phase1`** fills the exports for the step. Its timestamp routine sets the model clock back to the driver's current time (`NUOPC_CheckSetClock(..., forceCurrTime=.true.)`, NUOPC_refdoc 3.9.6) and stamps the exports at the step start. That reset is all `phase2` needs to pass NUOPC's default run-clock check; no `label_SetRunClock` override is required.
+- **`phase2`** copies CATChem's tracers back, records the hosted import totals, and logs the tracer sums. It fails by name if `phase1` has not run in the step (`MET: run phase phase2 entered before phase1 in this step`; a flag `phase1` sets and `phase2` clears, so a sequence that begins with `phase2` stops in the first step) or if it starts at a time other than the step start `phase1` recorded.
+- **No default phase:** a bare `ATM` line fails with `MET: no default run phase; runSeq:: must name ...`. The generator refuses a sequence that does not run `ATM phase1` and then `ATM phase2` once each.
+
+Two things read differently from before. The hosted totals of a step are now recorded in the step that produced them, not one step late: `met_import_totals.yaml` holds 120 records from 06:00:00Z in 720 s steps. The hourly tracer-sum lines are written in `phase2` and labelled with the step end, so the 24 lines run 07:00 to 06:00 next day where they ran 06:00 (zero) to 05:00.
+
+### The configuration set
+
+`configs/wm/catchem_cece_control/` is the hard copy of what a weather-model regression test would stage for CATChem fed by CECE:
+
+| File | What it is |
+| --- | --- |
+| `cece.yaml` | CECE's configuration: 18 streams, 33 exports, paths relative to the run directory (`ExtData/...`, `streams/...`) |
+| `CATChem_new_config.yml` | CATChem's production science config with `processes.extemis` replaced by the generator's block (`source: nuopc_import`); everything else is the production file |
+| `CATChem_emission.yml` | the emission map; equal to the production map for every category it holds, and without `volcano` (a point table, not gridded, inactive in the generated `extemis` block) |
+| `CATChem_field_mapping.yml` | the submodule's mapping plus the 33 emission import entries |
+| `fd_extemis.yaml` | the 33 emission entries, a fragment to append to `fd_ufs.yaml` |
+| `ufs.configure.atmaero_cece.IN` | the weather model's `ufs.configure.atmaero.IN` with the CECE block and the two CECE run-sequence lines added, placeholders (`@[cece_model]`, `@[cece_petlist_bounds]`, `@[cece_omp_num_threads]`) included |
+
+The generator writes it in its run-directory layout, with a four-line provenance comment and no time stamp or absolute path, so two runs give the same bytes:
+
+```bash
+uv run python -m tools.gen_configs --layout run-dir --from-defaults tools/defaults/manifest_realistic.yaml --defaults tools/defaults/gen_configs_realistic.yaml --catchem-base-config extern/CATChem/tests/Configs/Default/CATChem_new_config.yml --resolution C96 --out build/wm_configs/catchem_cece_control
+```
+
+The build runs that command on every build (target `wm_configs_catchem_cece_control`, into the build tree, never the source tree). To refresh the checked-in copy after a change to a defaults file, the base config or the generator, then review the diff and commit it:
+
+```bash
+cmake --build build --target update_wm_configs_catchem_cece_control
+```
+
+To see what the set changes against the production files, diff `CATChem_new_config.yml` and `CATChem_emission.yml` against `extern/CATChem/tests/Configs/Default/`, and the template against `tests/parm/ufs.configure.atmaero.IN` of the weather model (a byte copy at `5651397` is the fixture `tools/tests/fixtures/ufs.configure.atmaero.IN`; `tools/tests/test_wm_configs.py` holds each of these comparisons as a test). `--layout absolute` (the default) is the layout the prototype runs use: absolute paths, `esm.configure`, the generation record and the window files; `--pets` is required there only. `configs/wm/` is excluded from the whitespace, end-of-file, yamlfix and yamllint hooks, because a hook that rewrote a generated file would break the byte comparison. The resolution is `C96` by default and changes nothing in the files: the grid comes from the host field.
+
+Running the set unmodified is the `wm` label, described at the end of section 16.
+
+### CTest additions
+
+| Test | Label | What it holds |
+| --- | --- | --- |
+| `log_cece_met` | `ci` | the provenance lines of the `cece_met` run: grid from the host field, no `Parent grid` line |
+| `proto_cece_met_bad_order_fails`, `log_cece_met_bad_order` | `ci` | CECE listed before its host stops at initialize with the cap's message |
+| `proto_cece_met_bad_phase_order_fails`, `log_cece_met_bad_phase_order` | `ci` | `ATM phase2` before `ATM phase1` stops in the first step with MET's message (added after the PR review, with the flag) |
+| lines added to `log_cece_met_catchem` and `log_cece_met_catchem_realistic` | `ci` | the provenance lines; both `MET: run phase ...` lines at 2021-03-22T06:00:00; no default-phase error |
+| `wm_configs_catchem_cece_control_in_sync` | `ci` | the build-tree set equals the checked-in set byte for byte; on a difference it names the file and prints the diff and the refresh command |
+| `wm_configs_catchem_cece_control_stale_copy_fails` | `ci` | the failure case of that rule |
+| `exit_wm_nonzero_fails` | `ci`, `wm` | the failure case of the exit-status check |
+| `stage_wm_`, `proto_wm_`, `exit_wm_`, `stdout_wm_`, `verify_wm_`, `log_wm_catchem_cece_control` | `wm` | the checked-in set run as it is (section 16) |
+
+In CECE's own harness (`extern/CECE/tests/nuopc_coupling/test_nuopc_field_coupling.sh`), scenarios 5a to 5d cover the host-geometry source: a single-tile host grid at 1 and 2 PETs, a six-tile host on 6 PETs with a reference-shared import, the replaced source, and the two failures (host not realized, host field plus attached grid). The single-tile host grid matches the standalone output within 1e-20 absolute, not bit for bit (round-off in the coordinates, 1.9e-24 measured on a field of 3e-10); 1 PET equals 2 PETs bit for bit.
+
+### Measured
+
+Cloud builder, amd64, one whole-label run per step; C48, 6 PETs, 120 steps unless noted.
+
+| Step | Commit | `ci` tests | Label time | Analytic three-component run | Realistic run |
+| --- | --- | --- | --- | --- | --- |
+| before the task | | 34 of 34 | 219.3 s | | 75.4 s, 935 MB per PET |
+| grid from the host field | `e80782b` | 37 of 37 | 220.0 s | 52.5 s, 871 MB | 73.6 s, 932 MB |
+| labels, model keys, `SYMMEDGEMAX` | `87c7f2e` | 37 of 37 | 228.6 s | 54.7 s, 867 MB | 77.6 s |
+| two ATM phases | `705ed53` | 37 of 37 | 219.3 s | 52.2 s, 868 MB | 73.8 s |
+| checked-in set and sync test | `2dcbff9` | 39 registered; 37 of 37, then the 2 new ones after a one-line fix | | | |
+| the set run as it is, one shared ESMF | `06cc844` | 40 of 40, with the 6 `wm`-only tests 46 of 46 | 556.5 s for both labels | 52.7 s, 864 MB | 74.3 s, 930 MB |
+| PR review fixes (phase guard and its failure case) | after `9c070f2` | 42 of 42, with the 6 `wm`-only tests 48 of 48 | 549.9 s for both labels | 52.0 s | 73.6 s |
+
+- **Conservation** is unchanged to the printed digits through every step: 1.529e-6 (`cece_met` and the analytic three-component run, `anthro/SO2`), 1.513e-5 (`anthro1/SO2`), 2.008e-3 (`dust/sep`, nearest-neighbour).
+- **The weather-model set** runs in 336 s at 1.44 GB per PET, exit status 0 (section 16).
+- **Python tooling:** `uv run pytest tools/tests` 279 passed at 100 % coverage (235 before the task).
+- **Byte equality across platforms:** the set generated on Linux in the image equals the checked-in set generated on this Mac.
+
+Not measured or not run: `SYMMEDGEMAX` where it differs from `BALANCED`; CECE's own CI on the new harness scenarios with the real CEDS file (they passed on the cloud builder with a synthetic stand-in); the `update_wm_configs_catchem_cece_control` target itself (the checked-in files come from the identical generator command); the `ci` label of `2dcbff9` as one run after its one-line script fix (the next step's run covers it); and after the last cloud run of `06cc844` the memory ceiling of `log_wm_catchem_cece_control` was tightened from 3.6 GB to 1.7 GB without a re-run (measured 1.44 GB).

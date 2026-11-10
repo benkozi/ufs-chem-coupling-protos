@@ -1,5 +1,5 @@
 # Prototype cece_met: CECE on the cubed-sphere tile grid with MET as the consumer (task 4). The executable is
-# protos/met_catchem's esmApp (EARTH_component_list: CECE MET); this directory renders the configs and
+# protos/met_catchem's esmApp (EARTH_component_list: ATM CECE); this directory renders the configs and
 # registers the tests. See runbook.md section 10.
 
 find_program(UV_EXECUTABLE uv REQUIRED)
@@ -76,6 +76,118 @@ endfunction()
 cece_met_run(proto_cece_met C48 6 120 mockdata ci 1800)
 set_tests_properties(proto_cece_met PROPERTIES FIXTURES_SETUP cece_met_run)
 cece_met_run(proto_cece_met_c96 C96 6 120 mockdata_c96 c96 7200)
+
+# Issue 16: CECE takes its grid from MET's realized tracer field (CECE_SetHostGeometry), not from a grid the
+# driver attaches. The cap's provenance lines are the evidence, on the PET logs.
+set(_log_check ${PROJECT_SOURCE_DIR}/tests/log_check.cmake)
+file(
+  WRITE ${CMAKE_CURRENT_BINARY_DIR}/log_cece_met.spec
+  [=[
+require \[Cap\] grid source: host field ATM/inst_tracer_mass_frac \(tileCount=6, local DE [0-5] of tile [1-6]\)
+require \[Cap\] Host grid block: .* \(48x48\), corners 49x49
+forbid \[Cap\] Parent grid:
+forbid \[Cap\] No parent grid or mesh
+require MET: run phase phase1 \(exports filled\) first entered at 2021-03-22T06:00:00
+require MET: run phase phase2 \(tracers taken, hosted imports totalled\) first entered at 2021-03-22T06:00:00
+forbid MET: no default run phase
+require MET: hosted import extemis_anthro_NO ShareStatusField=shared
+]=]
+)
+add_test(
+  NAME log_cece_met
+  COMMAND
+    ${CMAKE_COMMAND} -DRUN_DIR=${CMAKE_CURRENT_BINARY_DIR}/run_C48_np6
+    -DSPEC=${CMAKE_CURRENT_BINARY_DIR}/log_cece_met.spec -P ${_log_check}
+)
+set_tests_properties(log_cece_met PROPERTIES FIXTURES_REQUIRED cece_met_run LABELS ci TIMEOUT 120)
+
+# The component-order rule's failure case: the driver runs each initialize phase over its children in
+# EARTH_component_list order, so with CECE listed before ATM (the label of MET, the analytic provider) the cap finds its tracer field unrealized and
+# says so. esmApp prints only the failing phase; the named error is checked on the PET logs.
+file(READ ${CMAKE_CURRENT_BINARY_DIR}/esm.C48.configure _cece_met_config)
+string(REPLACE "EARTH_component_list: ATM CECE" "EARTH_component_list: CECE ATM" _bad_order_config "${_cece_met_config}")
+if(_bad_order_config STREQUAL _cece_met_config)
+  message(FATAL_ERROR "cece_met: esm.configure.in no longer has 'EARTH_component_list: ATM CECE'; update the bad-order case")
+endif()
+file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/esm.C48.bad_order.configure "${_bad_order_config}")
+set(_run_bad_order ${CMAKE_CURRENT_BINARY_DIR}/run_C48_np6_bad_order)
+file(MAKE_DIRECTORY ${_run_bad_order})
+add_test(
+  NAME proto_cece_met_bad_order_fails
+  COMMAND
+    ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 6 ${MPIEXEC_PREFLAGS}
+    $<TARGET_FILE:esmApp> ${CMAKE_CURRENT_BINARY_DIR}/esm.C48.bad_order.configure
+  WORKING_DIRECTORY ${_run_bad_order}
+)
+set_tests_properties(
+  proto_cece_met_bad_order_fails
+  PROPERTIES
+    FIXTURES_REQUIRED mockdata
+    FIXTURES_SETUP cece_met_bad_order_run
+    LABELS ci
+    PASS_REGULAR_EXPRESSION "cece_met: Initialize( \\(user\\))? failed"
+    FAIL_REGULAR_EXPRESSION "MPI_ABORT|ORTE_ERROR_LOG|completed [0-9]+ steps"
+    TIMEOUT 300
+)
+file(
+  WRITE ${CMAKE_CURRENT_BINARY_DIR}/log_cece_met_bad_order.spec
+  [=[
+require \[Cap\] host geometry field inst_tracer_mass_frac of ATM is not realized; the host must precede CECE
+]=]
+)
+add_test(
+  NAME log_cece_met_bad_order
+  COMMAND
+    ${CMAKE_COMMAND} -DRUN_DIR=${_run_bad_order} -DSPEC=${CMAKE_CURRENT_BINARY_DIR}/log_cece_met_bad_order.spec
+    -P ${_log_check}
+)
+set_tests_properties(log_cece_met_bad_order PROPERTIES FIXTURES_REQUIRED cece_met_bad_order_run LABELS ci TIMEOUT 120)
+
+# The phase-order rule's failure case: a runSeq:: that runs `ATM phase2` before `ATM phase1` stops in the first
+# step with MET's own message (the generator refuses such a sequence; a hand-written file gets this far).
+string(REPLACE "    ATM phase1\n" "    ATM phaseX\n" _bad_phase_config "${_cece_met_config}")
+string(REPLACE "    ATM phase2\n" "    ATM phase1\n" _bad_phase_config "${_bad_phase_config}")
+string(REPLACE "    ATM phaseX\n" "    ATM phase2\n" _bad_phase_config "${_bad_phase_config}")
+if(_bad_phase_config STREQUAL _cece_met_config)
+  message(FATAL_ERROR "cece_met: esm.configure.in no longer has the `ATM phase1` and `ATM phase2` lines; update the bad-phase-order case")
+endif()
+file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/esm.C48.bad_phase_order.configure "${_bad_phase_config}")
+set(_run_bad_phase ${CMAKE_CURRENT_BINARY_DIR}/run_C48_np6_bad_phase_order)
+file(MAKE_DIRECTORY ${_run_bad_phase})
+add_test(
+  NAME proto_cece_met_bad_phase_order_fails
+  COMMAND
+    ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 6 ${MPIEXEC_PREFLAGS}
+    $<TARGET_FILE:esmApp> ${CMAKE_CURRENT_BINARY_DIR}/esm.C48.bad_phase_order.configure
+  WORKING_DIRECTORY ${_run_bad_phase}
+)
+set_tests_properties(
+  proto_cece_met_bad_phase_order_fails
+  PROPERTIES
+    FIXTURES_REQUIRED mockdata
+    FIXTURES_SETUP cece_met_bad_phase_order_run
+    LABELS ci
+    PASS_REGULAR_EXPRESSION "cece_met: Run( \\(user\\))? failed"
+    FAIL_REGULAR_EXPRESSION "MPI_ABORT|ORTE_ERROR_LOG|completed [0-9]+ steps"
+    TIMEOUT 300
+)
+file(
+  WRITE ${CMAKE_CURRENT_BINARY_DIR}/log_cece_met_bad_phase_order.spec
+  [=[
+require MET: run phase phase2 entered before phase1 in this step
+forbid MET: run phase phase2 \(tracers taken
+]=]
+)
+add_test(
+  NAME log_cece_met_bad_phase_order
+  COMMAND
+    ${CMAKE_COMMAND} -DRUN_DIR=${_run_bad_phase} -DSPEC=${CMAKE_CURRENT_BINARY_DIR}/log_cece_met_bad_phase_order.spec
+    -P ${_log_check}
+)
+set_tests_properties(
+  log_cece_met_bad_phase_order
+  PROPERTIES FIXTURES_REQUIRED cece_met_bad_phase_order_run LABELS ci TIMEOUT 120
+)
 
 # Conservation: MET's totals against the task-2 inventory totals at the hourly record times (where CECE's
 # linear interpolation equals the record). The tolerance is the measured AXIS consd error, rounded up

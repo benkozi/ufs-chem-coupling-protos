@@ -1,18 +1,21 @@
 # met_catchem driver configuration (ufs.configure shape), rendered by CMake from protos/met_catchem/esm.configure.in
 # for @RES@. Paths are absolute, so the run directory can be anywhere. Edit a copy for a by-hand run.
 
-# EARTH #
-EARTH_component_list: MET CATCHEM
+# EARTH # Labels as in the ufs-weather-model's ufs.configure (ATM, CHM); <PFX>_model picks the component, as
+# UFSDriver does. ATM is the analytic meteorology provider (model proto_met), standing in for the FV3 cap.
+EARTH_component_list: ATM CHM
 
-# MET: the analytic meteorology provider (protos/met_catchem/proto_met.F90). -1 -1 = all PETs.
-MET_petlist_bounds: -1 -1
-MET_attributes::
+# ATM: the analytic meteorology provider (protos/met_catchem/proto_met.F90). -1 -1 = all PETs.
+ATM_model: proto_met
+ATM_petlist_bounds: -1 -1
+ATM_attributes::
   Verbosity = high
 ::
 
-# CATCHEM: the CATChem NUOPC cap (cc_nuopc) from the image.
-CATCHEM_petlist_bounds: -1 -1
-CATCHEM_attributes::
+# CHM: the CATChem NUOPC cap (cc_nuopc) from the image.
+CHM_model: catchem
+CHM_petlist_bounds: -1 -1
+CHM_attributes::
   Verbosity = high
 ::
 
@@ -32,12 +35,14 @@ grid_source: @GRID_SOURCE@
 # 192 PETs uses 4 8.
 # regdecomp_per_tile: 4 8
 
-# One outer loop at the manifest's coupling step; providers first, stamping at step start.
+# One outer loop at the manifest's coupling step: the sequence of the ufs-weather-model's
+# ufs.configure.atmaero.IN. ATM phase1 fills the exports (stamped at step start), ATM phase2 takes CHM's tracers.
 runSeq::
   @@STEP_SECONDS@
-    MET
-    MET -> CATCHEM
-    CATCHEM
-    CATCHEM -> MET
+    ATM phase1
+    ATM -> CHM
+    CHM
+    CHM -> ATM
+    ATM phase2
   @
 ::

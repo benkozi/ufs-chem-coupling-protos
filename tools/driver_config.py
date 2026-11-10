@@ -7,12 +7,15 @@ from pathlib import Path
 import yaml
 from pydantic import Field, model_validator
 
+from tools import gen_defaults as gd
 from tools import manifest as mf
 from tools.catchem_yaml import standard_name
 from tools.manifest import Strict
 from tools.settings import get_settings
 
-KNOWN_COMPONENTS = ("CECE", "MET", "CATCHEM")
+# The driver's components: the label of ufs.configure -> the <PFX>_model value the driver selects by (UFSDriver
+# does the same: `CHM_model: catchem`). ATM is the analytic meteorology provider standing in for the FV3 cap.
+COMPONENT_MODELS = {"ATM": "proto_met", "CHM": "catchem", "CECE": "cece"}
 
 
 class FieldDictionaryEntry(Strict):
@@ -73,6 +76,81 @@ def with_emission_entries(
     return FieldDictionaryFile(field_dictionary=dictionary)
 
 
+class FieldDictionaryFragment(Strict):
+    """The emission entries alone, for appending to a host's dictionary (the weather model's fd_ufs.yaml)."""
+
+    entries: list[FieldDictionaryEntry] = Field(
+        description="The emission entries, in manifest order."
+    )
+
+    def to_yaml(self, path: Path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            yaml.safe_dump(
+                {"field_dictionary": self.model_dump(mode="json", exclude_none=True)},
+                sort_keys=False,
+            )
+        )
+
+
+def emission_fragment(manifest: mf.Manifest) -> FieldDictionaryFragment:
+    return FieldDictionaryFragment(
+        entries=[
+            FieldDictionaryEntry(
+                standard_name=standard_name(category, variable),
+                canonical_units=spec.units,
+            )
+            for category, cat in manifest.categories.items()
+            if not cat.is_point_table
+            for variable, spec in cat.variables.items()
+        ]
+    )
+
+
+WM_KEY_WIDTH = 32
+
+
+def render_wm_driver(wm: gd.WmDriver) -> str:
+    """The weather model's tests/parm/ufs.configure.atmaero.IN, line for line, with the given components and sequence."""
+    lines = [
+        "#############################################",
+        "####  UFS Run-Time Configuration File  ######",
+        "#############################################",
+        "",
+        "# ESMF #",
+        "logKindFlag:            @[esmf_logkind]",
+        "globalResourceControl:  @[ESMF_THREADING]",
+        "",
+        "# EARTH #",
+        f"EARTH_component_list: {' '.join(c.label for c in wm.components)}",
+        "EARTH_attributes::",
+        "  Verbosity = 0",
+        "::",
+        "",
+    ]
+    for c in wm.components:
+        lines += [
+            f"# {c.label} #",
+            *[
+                f"{c.label}_{key}:".ljust(WM_KEY_WIDTH) + f"@[{c.placeholder}_{key}]"
+                for key in ("model", "petlist_bounds", "omp_num_threads")
+            ],
+            f"{c.label}_attributes::",
+            "  Verbosity = 0",
+            "::",
+            "",
+        ]
+    lines += [
+        "# Run Sequence #",
+        "runSeq::",
+        "  @@[coupling_interval_sec]",
+        *[f"    {line}" for line in wm.run_sequence],
+        "  @",
+        "::",
+    ]
+    return "\n".join(lines) + "\n"
+
+
 class HostedImportRow(Strict):
     standard_name: str = Field(description="Standard name of the hosted CECE export.")
     category: str = Field(description="Category of the totals record.")
@@ -101,7 +179,8 @@ class DriverConfig(Strict):
         description="The run's name (summary line, driver component, pass expression)."
     )
     components: list[str] = Field(
-        description="EARTH_component_list in order (CECE, MET, CATCHEM).", min_length=1
+        description="EARTH_component_list in order (ATM, CHM, CECE): the initialize order; ATM precedes CECE.",
+        min_length=1,
     )
     pets: int = Field(description="PET count; every component runs on all PETs.", gt=0)
     verbosity: str = Field(description="NUOPC Verbosity attribute of every component.")
@@ -134,7 +213,7 @@ class DriverConfig(Strict):
     )
     hosted_imports: list[HostedImportRow] = Field(
         default_factory=list,
-        description="Rows of met_hosted_imports::, the CECE exports MET also consumes; no table when empty.",
+        description="Rows of met_hosted_imports::, the CECE exports ATM also consumes; no table when empty.",
     )
 
     @model_validator(mode="after")
@@ -151,11 +230,32 @@ class DriverConfig(Strict):
             raise ValueError(
                 f"regdecomp {self.regdecomp[0]} x {self.regdecomp[1]} must equal the PET count per tile {self.pets // tiles}"
             )
-        unknown = [c for c in self.components if c not in KNOWN_COMPONENTS]
+        unknown = [c for c in self.components if c not in COMPONENT_MODELS]
         if unknown:
             raise ValueError(
-                f"unknown components {unknown}; the driver knows {', '.join(KNOWN_COMPONENTS)}"
+                f"unknown components {unknown}; the driver knows {', '.join(COMPONENT_MODELS)}"
             )
+        # CECE takes its grid from ATM's realized tracer field (CECE_SetHostGeometry); the driver initializes
+        # its children in list order, so the host comes first.
+        if "CECE" in self.components and (
+            "ATM" not in self.components
+            or self.components.index("ATM") > self.components.index("CECE")
+        ):
+            raise ValueError(
+                f"components {self.components}: list ATM before CECE (CECE's grid comes from ATM's tracer field)"
+            )
+        # ATM has the weather model's two run phases and no default one: phase1 fills its exports before the
+        # chemistry, phase2 reads what the other components produced in the step.
+        if "ATM" in self.components:
+            atm_lines = [
+                line
+                for line in self.run_sequence
+                if line.split()[0] == "ATM" and "->" not in line
+            ]
+            if atm_lines != ["ATM phase1", "ATM phase2"]:
+                raise ValueError(
+                    f"run_sequence runs ATM as {atm_lines}; it must name `ATM phase1` and then `ATM phase2`, once each"
+                )
         return self
 
     def render(self) -> str:
@@ -168,6 +268,7 @@ class DriverConfig(Strict):
         ]
         for component in self.components:
             lines += [
+                f"{component}_model: {COMPONENT_MODELS[component]}",
                 f"{component}_petlist_bounds: 0 {self.pets - 1}",
                 f"{component}_attributes::",
                 f"  Verbosity = {self.verbosity}",
