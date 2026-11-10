@@ -1071,7 +1071,7 @@ tools/ci.sh test wm
 - **What runs:** CATChem's production science config, all seven processes (`seasalt`, `dust`, `carbchem`, `settling`, `drydep`, `so4chem`, `wetdep`), on the analytic meteorology with the manifest's fifteen host tracers, the optics tables of section 15, 120 steps at C48 on 6 PETs. `grid.number_of_levels: 64` and the 2024 dates in the production file do no harm: the cap takes levels and clock from the host.
 - **Tests (`wm`):** `stage_wm_catchem_cece_control`; `proto_wm_catchem_cece_control` (passes on `wm_catchem_cece_control: completed 120 steps`; stdout to `wm_stdout.txt`, mpiexec's status to `wm_exit_status.txt`); `exit_wm_catchem_cece_control` (the status is 0) with its failure case `exit_wm_nonzero_fails` (also `ci`); `stdout_wm_catchem_cece_control` (no `CATChem ERROR`, no `ERROR LOCATION`, no invalid wavelength, no double free, no signal); `verify_wm_catchem_cece_control` (the directory still holds the set unmodified after the run); `log_wm_catchem_cece_control` (the realistic log evidence without the hosted imports, the driver's default file names, no ERROR line in a PET log, at most 1.7 GB per PET).
 
-Measured on the cloud builder, 2026-11-10 (`tools/ci.sh test "ci|wm"`, 46 of 46 passed: the 38 `ci` tests and the 8 `wm` ones): the run takes 336 s (74 s for the realistic run), 0.52 GB per PET after initialize and 1.44 GB at the end (0.93 GB), exit status 0, `wm_stdout.txt` 1.0 MB without an error line. It is kept out of `ci` for its run time.
+Measured on the cloud builder, 2026-11-10 (`tools/ci.sh test "ci|wm"`, 46 of 46 passed: the 40 `ci` tests and the 6 that carry `wm` only; `exit_wm_nonzero_fails` carries both labels): the run takes 336 s (74 s for the realistic run), 0.52 GB per PET after initialize and 1.44 GB at the end (0.93 GB), exit status 0, `wm_stdout.txt` 1.0 MB without an error line. It is kept out of `ci` for its run time.
 
 Two defects the first registered run (2026-11-10) exposed, both fixed:
 
@@ -1191,7 +1191,7 @@ Cloud builder, amd64, one whole-label run per step; C48, 6 PETs, 120 steps unles
 | labels, model keys, `SYMMEDGEMAX` | `87c7f2e` | 37 of 37 | 228.6 s | 54.7 s, 867 MB | 77.6 s |
 | two ATM phases | `705ed53` | 37 of 37 | 219.3 s | 52.2 s, 868 MB | 73.8 s |
 | checked-in set and sync test | `2dcbff9` | 39 registered; 37 of 37, then the 2 new ones after a one-line fix | | | |
-| the set run as it is, one shared ESMF | `06cc844` | 38 of 38, with the 8 `wm` tests 46 of 46 | 556.5 s for both labels | 52.7 s, 864 MB | 74.3 s, 930 MB |
+| the set run as it is, one shared ESMF | `06cc844` | 40 of 40, with the 6 `wm`-only tests 46 of 46 | 556.5 s for both labels | 52.7 s, 864 MB | 74.3 s, 930 MB |
 
 - **Conservation** is unchanged to the printed digits through every step: 1.529e-6 (`cece_met` and the analytic three-component run, `anthro/SO2`), 1.513e-5 (`anthro1/SO2`), 2.008e-3 (`dust/sep`, nearest-neighbour).
 - **The weather-model set** runs in 336 s at 1.44 GB per PET, exit status 0 (section 16).
