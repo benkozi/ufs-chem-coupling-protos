@@ -494,4 +494,160 @@ grow MET: tracer so2 area-weighted sum ([-+0-9.E]+) at
       LABELS ci
       TIMEOUT 120
   )
+
+  # Issue #16: the checked-in weather-model set (configs/wm/catchem_cece_control) run as it is, from a directory
+  # staged the way a regression test stages one (tools/stage_wm_run.py): the set's YAML files copied unmodified,
+  # the driver template with its placeholders filled, CATChem's production science config with all seven
+  # processes, the driver's run-directory defaults for the three path keys, no hosted imports (so the run
+  # sequence is the pushed one line for line and there is no conservation check: the realistic run keeps those).
+  # Label `wm`, not `ci`: 336 s on the cloud builder (74 s for the realistic run) and 1.44 GB per PET (0.93 GB).
+  # `tools/ci.sh test wm` runs it there. The generated resolution of the set (C96)
+  # does not matter to the files: the grid comes from the host field.
+  set(_wm_set catchem_cece_control)
+  set(_run_wm ${CMAKE_CURRENT_BINARY_DIR}/run_wm_${_wm_set}_np6)
+  set(_stage_wm ${UV_EXECUTABLE} run --no-sync python -m tools.stage_wm_run
+      --set configs/wm/${_wm_set} --out ${_run_wm}
+      --manifest data/C48_realistic/manifest.yaml --extdata data/C48_realistic/ExtData
+      --streams ${PROJECT_BINARY_DIR}/gen/C48_realistic/streams)
+  add_test(NAME stage_wm_${_wm_set} COMMAND ${_stage_wm} WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
+  set_tests_properties(
+    stage_wm_${_wm_set}
+    PROPERTIES
+      FIXTURES_REQUIRED "mockdata_realistic;genconfigs_realistic"
+      FIXTURES_SETUP wm_${_wm_set}_staged
+      LABELS wm
+      TIMEOUT 120
+  )
+  # The run passes on its summary line; mpiexec's exit status goes to wm_exit_status.txt for exit_wm_<set>, so a
+  # run that completes and then dies in its exit handlers shows as exactly that: this test green, that one red.
+  add_test(
+    NAME proto_wm_${_wm_set}
+    COMMAND
+      bash -c "set -o pipefail; \"$0\" \"$@\" 2>&1 | tee wm_stdout.txt; echo mpiexec exit status $? > wm_exit_status.txt"
+      ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 6 ${MPIEXEC_PREFLAGS} $<TARGET_FILE:esmApp> ufs.configure
+    WORKING_DIRECTORY ${_run_wm}
+  )
+  set_tests_properties(
+    proto_wm_${_wm_set}
+    PROPERTIES
+      FIXTURES_REQUIRED wm_${_wm_set}_staged
+      FIXTURES_SETUP wm_${_wm_set}_run
+      LABELS wm
+      ENVIRONMENT_MODIFICATION "OMP_NUM_THREADS=unset:"
+      PASS_REGULAR_EXPRESSION "wm_${_wm_set}: completed 120 steps"
+      TIMEOUT 900
+  )
+  # (the status is written as a phrase: log_check tests a match as a CMake value, and a bare 0 is false)
+  file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/exit_wm.spec "require mpiexec exit status 0$\n")
+  add_test(
+    NAME exit_wm_${_wm_set}
+    COMMAND
+      ${CMAKE_COMMAND} -DRUN_DIR=${_run_wm} -DFILES=wm_exit_status.txt
+      -DSPEC=${CMAKE_CURRENT_BINARY_DIR}/exit_wm.spec -P ${_log_check}
+  )
+  set_tests_properties(
+    exit_wm_${_wm_set}
+    PROPERTIES FIXTURES_REQUIRED wm_${_wm_set}_run LABELS wm TIMEOUT 60
+  )
+  # The failure case of that check: a recorded status of 134 (SIGABRT, what the first runs of the set left, while
+  # esmApp carried ESMF twice; top-level CMakeLists.txt).
+  set(_exit_fails_dir ${CMAKE_CURRENT_BINARY_DIR}/exit_wm_nonzero_fails)
+  file(WRITE ${_exit_fails_dir}/wm_exit_status.txt "mpiexec exit status 134\n")
+  add_test(
+    NAME exit_wm_nonzero_fails
+    COMMAND
+      ${CMAKE_COMMAND} -DRUN_DIR=${_exit_fails_dir} -DFILES=wm_exit_status.txt
+      -DSPEC=${CMAKE_CURRENT_BINARY_DIR}/exit_wm.spec -P ${_log_check}
+  )
+  set_tests_properties(
+    exit_wm_nonzero_fails
+    PROPERTIES LABELS "ci;wm" PASS_REGULAR_EXPRESSION "log_check: required but not found" TIMEOUT 60
+  )
+  # CATChem reports a failing process on stdout and carries on (the first run of the set printed 1.66 million
+  # `CATChem ERROR: Error in running GOCART Chem_SettlingSimple scheme` blocks, 624 MB, and still completed:
+  # the optics tables had no 550 nm channel), so a completed run proves nothing about its processes without this.
+  file(
+    WRITE ${CMAKE_CURRENT_BINARY_DIR}/stdout_wm.spec
+    [=[
+forbid CATChem ERROR
+forbid ERROR LOCATION
+forbid is an invalid value
+forbid double free or corruption
+forbid exited on signal
+require wm_catchem_cece_control: completed 120 steps
+]=]
+  )
+  add_test(
+    NAME stdout_wm_${_wm_set}
+    COMMAND
+      ${CMAKE_COMMAND} -DRUN_DIR=${_run_wm} -DFILES=wm_stdout.txt
+      -DSPEC=${CMAKE_CURRENT_BINARY_DIR}/stdout_wm.spec -P ${_log_check}
+  )
+  set_tests_properties(
+    stdout_wm_${_wm_set}
+    PROPERTIES FIXTURES_REQUIRED wm_${_wm_set}_run LABELS wm TIMEOUT 300
+  )
+  # After the run the directory still holds the set unmodified: the five YAML files and the species file byte
+  # for byte, the configure file starting with the filled template.
+  add_test(NAME verify_wm_${_wm_set} COMMAND ${_stage_wm} --verify WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
+  set_tests_properties(
+    verify_wm_${_wm_set}
+    PROPERTIES FIXTURES_REQUIRED wm_${_wm_set}_run LABELS wm TIMEOUT 120
+  )
+
+  # The PET-log evidence, as for the realistic run without the hosted imports: the 33 imports connected, bound
+  # and reference-shared, the 18 gridded categories import-fed, no emission file opened, CECE's grid from the
+  # host field, the two ATM phases, the configuration files found by the driver's run-directory defaults, and
+  # the memory ceiling of the production processes (1.44 GB per PET measured on the cloud builder; 3.40 GB while
+  # the settling scheme failed on every call).
+  file(
+    WRITE ${CMAKE_CURRENT_BINARY_DIR}/log_wm_${_wm_set}.spec
+    [=[
+require driver: CATChem config CATChem_new_config.yml, field mapping CATChem_field_mapping.yml
+require driver: CECE config cece.yaml
+require CATChem: RealizeAccepted removed 0 unconnected optional import\(s\)
+require CATChem: category anthro1: 3 field\(s\) read from NUOPC imports
+require CATChem: category anthro2: 3 field\(s\) read from NUOPC imports
+require CATChem: category ship: 4 field\(s\) read from NUOPC imports
+require CATChem: category fire: 1 field\(s\) read from NUOPC imports
+require CATChem: category bio: 4 field\(s\) read from NUOPC imports
+require CATChem: category gmi: 3 field\(s\) read from NUOPC imports
+require CATChem: category dms: 1 field\(s\) read from NUOPC imports
+require CATChem: category dust: 4 field\(s\) read from NUOPC imports
+require CATChem: category fengsha: 1 field\(s\) read from NUOPC imports
+require CATChem: 33 emission import\(s\) bound to emission fields
+count 33 Realized export field "[a-z0-9_]+_[A-Za-z0-9_]+" \(48x48x127\)
+count 33 CATChem: emission import extemis_[a-z0-9_]+_[A-Za-z0-9_]+ ShareStatusField=shared
+forbid ShareStatusField=not shared
+forbid Removed unconnected export field
+forbid owns an open corner ring
+require catchem_emis_init: extemis source=nuopc_import
+require catchem_emis_update: Emission data updated
+forbid CATChem: emission open category=
+forbid AQMIO: open iomode=read path=
+forbid MET: hosted import
+forbid Unrecognized emission field units
+forbid Unrecognized vertical_dist option
+forbid DRIVER FATAL
+forbid ^[0-9]+ [0-9.]+ ERROR
+require \[Cap\] grid source: host field ATM/inst_tracer_mass_frac \(tileCount=6, local DE [0-5] of tile [1-6]\)
+require \[Cap\] Host grid block: .* \(48x48\), corners 49x49
+forbid \[Cap\] Parent grid:
+forbid \[Cap\] No parent grid or mesh
+require MET: run phase phase1 \(exports filled\) first entered at 2021-03-22T06:00:00
+require MET: run phase phase2 \(tracers taken, hosted imports totalled\) first entered at 2021-03-22T06:00:00
+forbid MET: no default run phase
+require \[Cap\] Kokkos OpenMP threads from the ESMF VM: 1 PE\(s\) on this PET
+below 1700000 wm_catchem_cece_control: memory per PET max virt [0-9]+ KB phys ([0-9]+) KB \(at end\)
+]=]
+  )
+  add_test(
+    NAME log_wm_${_wm_set}
+    COMMAND
+      ${CMAKE_COMMAND} -DRUN_DIR=${_run_wm} -DSPEC=${CMAKE_CURRENT_BINARY_DIR}/log_wm_${_wm_set}.spec -P ${_log_check}
+  )
+  set_tests_properties(
+    log_wm_${_wm_set}
+    PROPERTIES FIXTURES_REQUIRED wm_${_wm_set}_run LABELS wm TIMEOUT 120
+  )
 endif()

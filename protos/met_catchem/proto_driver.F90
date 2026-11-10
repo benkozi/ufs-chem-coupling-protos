@@ -73,8 +73,12 @@ contains
     if (ESMF_LogFoundError(rcToCheck=rc, msg="config key 'manifest:' missing", line=__LINE__, file=__FILE__)) return
     call ESMF_ConfigGetAttribute(config, data_root, label="data_root:", default=".", rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
-    call ESMF_ConfigGetAttribute(config, mapping, label="catchem_field_mapping_file:", rc=rc)
-    if (ESMF_LogFoundError(rcToCheck=rc, msg="config key 'catchem_field_mapping_file:' missing", line=__LINE__, file=__FILE__)) return
+    ! The three path keys default to the names a weather-model run directory holds (the CATChem cap's own
+    ! defaults, and the name UFSDriver will pass to CECE_SetConfigPath), so a configure file without them,
+    ! like the weather model's, runs from a staged directory (ESMF_refdoc 48.3.10: default= applies when the
+    ! label is not found).
+    call ESMF_ConfigGetAttribute(config, mapping, label="catchem_field_mapping_file:", default="CATChem_field_mapping.yml", rc=rc)
+    if (ESMF_LogFoundError(rcToCheck=rc, msg="config key 'catchem_field_mapping_file:'", line=__LINE__, file=__FILE__)) return
     call ESMF_ConfigFindLabel(config, "regdecomp_per_tile:", isPresent=have_decomp, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
     ! the component list, the UFSDriver way (ESMF_ConfigGetLen, then the value list)
@@ -200,9 +204,10 @@ contains
     do i = 1, n_comps
       select case (trim(comp_models(i)))
       case ("catchem")
-        call ESMF_ConfigGetAttribute(config, catchem_config, label="catchem_config_file:", rc=rc)
-        if (ESMF_LogFoundError(rcToCheck=rc, msg="config key 'catchem_config_file:' missing (a catchem component is listed)", line=__LINE__, file=__FILE__)) return
+        call ESMF_ConfigGetAttribute(config, catchem_config, label="catchem_config_file:", default="CATChem_new_config.yml", rc=rc)
+        if (ESMF_LogFoundError(rcToCheck=rc, msg="config key 'catchem_config_file:'", line=__LINE__, file=__FILE__)) return
         call cc_nuopc_set_config_file(trim(catchem_config))
+        call ESMF_LogWrite("driver: CATChem config "//trim(catchem_config)//", field mapping "//trim(mapping), ESMF_LOGMSG_INFO)
         call add_component(driver, config, trim(comp_labels(i)), pet_count, child, rc, catchem_SS, catchem_SV); if (rc /= ESMF_SUCCESS) return
       case ("proto_met")
         call add_component(driver, config, trim(comp_labels(i)), pet_count, child, rc, met_SS); if (rc /= ESMF_SUCCESS) return
@@ -212,8 +217,9 @@ contains
         met_label = comp_labels(i)
         have_met = .true.
       case ("cece")
-        call ESMF_ConfigGetAttribute(config, cece_config, label="cece_config_file:", rc=rc)
-        if (ESMF_LogFoundError(rcToCheck=rc, msg="config key 'cece_config_file:' missing (a cece component is listed)", line=__LINE__, file=__FILE__)) return
+        call ESMF_ConfigGetAttribute(config, cece_config, label="cece_config_file:", default="cece.yaml", rc=rc)
+        if (ESMF_LogFoundError(rcToCheck=rc, msg="config key 'cece_config_file:'", line=__LINE__, file=__FILE__)) return
+        call ESMF_LogWrite("driver: CECE config "//trim(cece_config), ESMF_LOGMSG_INFO)
         call CECE_SetConfigPath(trim(cece_config), rc)
         if (ESMF_LogFoundError(rcToCheck=rc, msg="CECE_SetConfigPath "//trim(cece_config), line=__LINE__, file=__FILE__)) return
         call add_component(driver, config, trim(comp_labels(i)), pet_count, child, rc, cece_SS); if (rc /= ESMF_SUCCESS) return

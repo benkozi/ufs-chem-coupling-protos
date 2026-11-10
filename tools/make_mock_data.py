@@ -6,8 +6,9 @@ Fetches and validates the FV3 fix files for the resolution, writes the analytic 
 and totals.yaml, and <out>/manifest.yaml describing all of it. The parameter set comes from the profile's
 defaults file (`--profile analytic`: `tools/defaults/manifest.yaml`, six categories under <out>/inventories;
 `--profile realistic`: `tools/defaults/manifest_realistic.yaml`, CATChem's production categories at their real
-relative paths under <out>/ExtData plus the volcanic tables), or from --defaults / PROTOS_DEFAULTS, with the
-clock and grid options overriding it; `--grid-factor N` coarsens every grid N times for CI-sized output. Exit
+relative paths under <out>/ExtData plus the volcanic tables and the synthetic GOCART optics tables of
+`tools/optics.py` under <out>/ExtData/monochromatic), or from --defaults / PROTOS_DEFAULTS, with the clock and
+grid options overriding it; `--grid-factor N` coarsens every grid N times for CI-sized output. Exit
 status 0 on success, 1 when the fetch or the generation fails (logged), 2 for a usage error.
 """
 
@@ -22,7 +23,7 @@ from typing import get_args
 
 import pydantic
 
-from tools import fixfiles, inventories, log
+from tools import fixfiles, inventories, log, optics
 from tools import manifest as mf
 from tools.settings import LogLevel, get_settings
 
@@ -166,6 +167,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             update={"fix": manifest.fix.model_copy(update={"sizes": sizes})}
         )
         inventories.generate_inventories(manifest)
+        if args.profile == "realistic":
+            # CATChem's production config reads these (its `mie:` section); they are not in the manifest,
+            # which describes the emission inventories.
+            optics.write_optics_tables(optics.load_headers(), args.out)
         manifest.to_yaml(manifest_path)
     except (fixfiles.FixFileError, OSError, ValueError) as exc:
         logger.error("%s", exc)
