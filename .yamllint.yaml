@@ -1,8 +1,10 @@
 # Kept coherent with [tool.yamlfix] in pyproject.toml (no document start).
-# design/ holds records; extern/ holds the submodules; build/ and .venv/ are generated.
+# design/ holds records; extern/ holds the submodules; build/ and .venv/ are generated; configs/wm/ holds
+# generated configuration sets kept byte for byte as the generator writes them.
 extends: default
 ignore: |
   design/
+  configs/wm/
   extern/
   build/
   .venv/

@@ -46,3 +46,14 @@ add_subdirectory(tests/genconfigs)
 add_subdirectory(protos/met_catchem)
 add_subdirectory(protos/cece_met)
 add_subdirectory(protos/cece_met_catchem)
+
+# The hard copy of the configuration set a weather-model test stages (issue #16): generated into the build tree
+# on every build, compared with configs/wm/catchem_cece_control/ by a ci test, refreshed by an explicit target.
+include(wm_config_set)
+protos_wm_config_set(
+  NAME catchem_cece_control
+  MANIFEST_DEFAULTS tools/defaults/manifest_realistic.yaml
+  GEN_DEFAULTS tools/defaults/gen_configs_realistic.yaml
+  BASE_CONFIG extern/CATChem/tests/Configs/Default/CATChem_new_config.yml
+  RESOLUTION C96
+)

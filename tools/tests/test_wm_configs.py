@@ -399,3 +399,28 @@ def test_a_set_cece_rejects_is_a_failure(
     with caplog.at_level(logging.ERROR, logger=log.ROOT_NAME):
         assert run_dir(tmp_path / "o") == 1
     assert "CECE rejects the emitted configuration" in caplog.text
+
+
+CHECKED_IN = REPO_ROOT / "configs/wm/catchem_cece_control"
+
+
+def test_the_checked_in_set_is_what_the_generator_writes(wm_set: Path) -> None:
+    # the pytest twin of the CTest wm_configs_catchem_cece_control_in_sync: refresh with the build target
+    # update_wm_configs_catchem_cece_control when a defaults file, the base config or the generator changes
+    assert sorted(p.name for p in CHECKED_IN.iterdir()) == sorted(SET_NAMES)
+    for name in SET_NAMES:
+        assert (CHECKED_IN / name).read_bytes() == (wm_set / name).read_bytes(), name
+
+
+def test_the_checked_in_set_is_valid() -> None:
+    assert gc.validate_cece_file(CHECKED_IN / "cece.yaml") == []
+    defaults = gd.GenDefaults.from_yaml(GEN_DEFAULTS)
+    mapping = yaml.safe_load((CHECKED_IN / "CATChem_field_mapping.yml").read_text())
+    names = {e["standard_name"] for e in mapping["import_fields"]}
+    cece = yaml.safe_load((CHECKED_IN / "cece.yaml").read_text())
+    exports = {e["standard_name"] for e in cece["nuopc"]["export_fields"].values()}
+    # everything CECE exports is something CATChem imports, and every active category has its map
+    assert exports <= names
+    emission = yaml.safe_load((CHECKED_IN / "CATChem_emission.yml").read_text())
+    active = {n for n, c in defaults.categories.items() if not c.inactive}
+    assert set(emission) == active
