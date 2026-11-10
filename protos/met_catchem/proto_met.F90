@@ -61,6 +61,7 @@ module proto_met
     real(rk), allocatable :: lon(:, :), lat(:, :), area(:, :), land(:, :), oro(:, :)
     type(field_spec), allocatable :: exports(:), imports(:)
     type(ESMF_Time) :: step_start
+    logical :: phase1_done = .false.  ! phase1 has run in the current step and phase2 has not yet
     integer :: step = 0
     ! hosted imports and their totals: tot(level, record, hosted), one stamp per record
     type(ESMF_VM) :: vm
@@ -418,7 +419,6 @@ contains
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
     call ESMF_ClockGet(clock, currTime=now, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
-    s%step_start = now
     call fill_exports(s, exportState, now, rc); if (rc /= ESMF_SUCCESS) return
     ! Hosted imports: realized by the connector with the provider's storage by now; the shared status is the
     ! proof, anything else is an error (a copy would hide a decomposition mismatch).
@@ -518,6 +518,7 @@ contains
     call ESMF_ClockGet(clock, currTime=now, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
     s%step_start = now
+    s%phase1_done = .true.
     call fill_exports(s, exportState, now, rc); if (rc /= ESMF_SUCCESS) return
     if (s%step == 0) then
       call ESMF_TimeGet(now, timeString=stamp, rc=rc)
@@ -548,6 +549,15 @@ contains
     ! step end as stop time.
     call ESMF_ClockGet(clock, currTime=now, stopTime=step_end, rc=rc)
     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
+    ! phase1 must have run in this step: step_start is only meaningful then (at the first step an unset or
+    ! start-time value would otherwise let a sequence that begins with phase2 through).
+    if (.not. s%phase1_done) then
+      call ESMF_LogSetError(ESMF_RC_ARG_BAD, msg="MET: run phase "//PHASE2//" entered before "//PHASE1//" in this step; "// &
+                            "runSeq:: must run "//PHASE1//" before "//PHASE2//" in every step", &
+                            line=__LINE__, file=__FILE__, rcToReturn=rc)
+      return
+    end if
+    s%phase1_done = .false.
     if (now /= s%step_start) then
       call ESMF_LogSetError(ESMF_RC_ARG_BAD, msg="MET: run phase "//PHASE2//" entered at a time other than the step start "// &
                             "of "//PHASE1//"; runSeq:: must run "//PHASE1//" before "//PHASE2//" in every step", &

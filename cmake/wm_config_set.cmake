@@ -7,8 +7,8 @@
 #
 # registers, with paths relative to the repository root:
 #   wm_configs_<set>            target, part of `all`: tools/gen_configs.py in the run-directory layout writes the
-#                               set to <build>/wm_configs/<set>/ whenever a defaults file, the base config or a
-#                               tools/*.py file changed. The build never writes into the source tree.
+#                               set to <build>/wm_configs/<set>/ whenever a defaults file, the base config,
+#                               CATChem's field mapping or species file, or a tools/*.py file changed. The build never writes into the source tree.
 #   wm_configs_<set>_in_sync    test (ci): the build-tree set equals configs/wm/<set>/ byte for byte; on a
 #                               difference it names the file and prints the diff and the refresh command.
 #   wm_configs_<set>_stale_copy_fails  test (ci): the rule's failure case, on a copy with one changed file.
@@ -37,6 +37,13 @@ function(protos_wm_config_set)
     --catchem-base-config ${_wm_BASE_CONFIG} --resolution ${_wm_RESOLUTION} --log-level WARNING
   )
   file(GLOB _tools CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/tools/*.py)
+  # What the generator reads from the CATChem submodule besides the base config (tools/settings.py:
+  # catchem_field_mapping, catchem_species_file), so a moved pin regenerates the set.
+  set(
+    _catchem_inputs
+    ${PROJECT_SOURCE_DIR}/extern/CATChem/drivers/nuopc/CATChem_field_mapping.yml
+    ${PROJECT_SOURCE_DIR}/extern/CATChem/tests/Configs/Default/CATChem_species.yml
+  )
 
   add_custom_command(
     OUTPUT ${_stamp}
@@ -45,7 +52,7 @@ function(protos_wm_config_set)
     COMMAND ${CMAKE_COMMAND} -E touch ${_stamp}
     DEPENDS
       ${PROJECT_SOURCE_DIR}/${_wm_MANIFEST_DEFAULTS} ${PROJECT_SOURCE_DIR}/${_wm_GEN_DEFAULTS}
-      ${PROJECT_SOURCE_DIR}/${_wm_BASE_CONFIG} ${_tools}
+      ${PROJECT_SOURCE_DIR}/${_wm_BASE_CONFIG} ${_catchem_inputs} ${_tools}
     WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
     COMMENT "weather-model configuration set ${_wm_NAME} -> ${_generated}"
     VERBATIM

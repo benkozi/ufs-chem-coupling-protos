@@ -266,6 +266,29 @@ def test_cli_reports_a_modified_run_directory(
     assert "cece.yaml differs from the set's copy" in caplog.text
 
 
+def test_repository_relative_settings_do_not_depend_on_the_working_directory(
+    inputs: dict[str, Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # the species file and the base dictionary are settings relative to the repository root
+    assert not get_settings().catchem_species_file.is_absolute()
+    assert not get_settings().base_field_dictionary.is_absolute()
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    sw.stage(request(inputs))
+    assert sw.differences(request(inputs)) == []
+    assert (inputs["out"] / "CATChem_species.yml").is_file()
+
+
+def test_the_pet_count_is_a_multiple_of_the_tile_count(
+    inputs: dict[str, Path], caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level(logging.ERROR, logger=log.ROOT_NAME):
+        assert sw.main(argv(inputs, "--pets", "4")) == 2
+    assert "PET count 4 must be a multiple of 6" in caplog.text
+    assert not inputs["out"].exists()
+
+
 def test_cli_usage_and_input_errors(
     inputs: dict[str, Path], caplog: pytest.LogCaptureFixture
 ) -> None:

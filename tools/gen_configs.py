@@ -96,6 +96,15 @@ def validate_cece_file(path: Path) -> list[str]:
     return [f"{display}:{line}: {message}" for display, line, message in errors]
 
 
+def require_valid_cece(path: Path) -> None:
+    """Stop the generation when CECE's validator rejects the emitted configuration."""
+    errors = validate_cece_file(path)
+    if errors:
+        raise GenerationError(
+            "CECE rejects the emitted configuration: " + "; ".join(errors)
+        )
+
+
 def hosted_rows(
     manifest: mf.Manifest, defaults: gd.GenDefaults, data_root: Path
 ) -> list[dc.HostedImportRow]:
@@ -267,11 +276,7 @@ def generate(
         run_sequence=list(defaults.run_sequence),
         hosted_imports=hosted,
     ).write(paths["driver"])
-    errors = validate_cece_file(paths["cece"])
-    if errors:
-        raise GenerationError(
-            "CECE rejects the emitted configuration: " + "; ".join(errors)
-        )
+    require_valid_cece(paths["cece"])
     record = GeneratedSet(
         manifest=manifest_path,
         manifest_digest=hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
@@ -433,11 +438,7 @@ def generate_run_dir(
     )
     for path in written:
         path.write_text(header + path.read_text())
-    errors = validate_cece_file(cece)
-    if errors:
-        raise GenerationError(
-            "CECE rejects the emitted configuration: " + "; ".join(errors)
-        )
+    require_valid_cece(cece)
     for path in written:
         logger.info("wrote %s", path)
     return written

@@ -520,10 +520,11 @@ grow MET: tracer so2 area-weighted sum ([-+0-9.E]+) at
   )
   # The run passes on its summary line; mpiexec's exit status goes to wm_exit_status.txt for exit_wm_<set>, so a
   # run that completes and then dies in its exit handlers shows as exactly that: this test green, that one red.
+  # The file of an earlier run is removed first: a run killed by the TIMEOUT writes none.
   add_test(
     NAME proto_wm_${_wm_set}
     COMMAND
-      bash -c "set -o pipefail; \"$0\" \"$@\" 2>&1 | tee wm_stdout.txt; echo mpiexec exit status $? > wm_exit_status.txt"
+      bash -c "rm -f wm_exit_status.txt; set -o pipefail; \"$0\" \"$@\" 2>&1 | tee wm_stdout.txt; echo mpiexec exit status $? > wm_exit_status.txt"
       ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 6 ${MPIEXEC_PREFLAGS} $<TARGET_FILE:esmApp> ufs.configure
     WORKING_DIRECTORY ${_run_wm}
   )

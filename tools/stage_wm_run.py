@@ -25,7 +25,7 @@ from typing import get_args
 
 import pydantic
 import yaml
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from tools import driver_config as dc
 from tools import log
@@ -39,6 +39,12 @@ DELIMITER = "# ---- prototype-only keys (tools/stage_wm_run.py); everything abov
 PLACEHOLDER = re.compile(r"@\[([A-Za-z0-9_]+)\]")
 DICTIONARY_NAME = "fd.yaml"
 LINKS = ("ExtData", "streams")
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def repo_path(path: Path) -> Path:
+    """A settings path: relative ones are relative to the repository root, whatever the working directory."""
+    return path if path.is_absolute() else (REPO_ROOT / path).resolve()
 
 
 class StageError(Exception):
@@ -64,6 +70,16 @@ class StageRequest(Strict):
     data_root: Path = Field(
         description="Directory the manifest's relative paths are relative to."
     )
+
+    @field_validator("pets")
+    @classmethod
+    def _one_de_per_pet_on_every_tile(cls, pets: int) -> int:
+        tiles = get_settings().n_tiles
+        if pets % tiles:
+            raise ValueError(
+                f"PET count {pets} must be a multiple of {tiles} (one DE per PET on {tiles} tiles)"
+            )
+        return pets
 
     @property
     def set_files(self) -> list[str]:
@@ -178,14 +194,14 @@ def stage(request: StageRequest) -> list[Path]:
     written: list[Path] = []
     for name in request.set_files:
         written.append(Path(shutil.copyfile(request.config_set / name, out / name)))
-    species = settings.catchem_species_file
+    species = repo_path(settings.catchem_species_file)
     written.append(Path(shutil.copyfile(species, out / species.name)))
     for name, target in request.links.items():
         (out / name).symlink_to(target.resolve(), target_is_directory=True)
         written.append(out / name)
     dictionary = out / DICTIONARY_NAME
     merged_dictionary(
-        settings.base_field_dictionary,
+        repo_path(settings.base_field_dictionary),
         request.config_set / settings.field_dictionary_fragment_filename,
     ).to_yaml(dictionary)
     written.append(dictionary)
@@ -200,7 +216,7 @@ def differences(request: StageRequest) -> list[str]:
     settings = get_settings()
     out = request.out
     found: list[str] = []
-    species = settings.catchem_species_file
+    species = repo_path(settings.catchem_species_file)
     sources = {name: request.config_set / name for name in request.set_files}
     sources[species.name] = species
     for name, source in sources.items():

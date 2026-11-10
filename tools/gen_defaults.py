@@ -144,7 +144,20 @@ class WmDriver(Strict):
 
     @model_validator(mode="after")
     def _lines_name_listed_components(self) -> WmDriver:
-        labels = {c.label for c in self.components}
+        ordered = [c.label for c in self.components]
+        labels = set(ordered)
+        if len(labels) != len(ordered):
+            raise ValueError(
+                f"wm_driver components {ordered} name a component more than once"
+            )
+        # CECE takes its grid from ATM's realized tracer field and the driver initializes in list order
+        # (the rule DriverConfig holds for the prototype's own driver file).
+        if "CECE" in labels and (
+            "ATM" not in labels or ordered.index("ATM") > ordered.index("CECE")
+        ):
+            raise ValueError(
+                f"wm_driver components {ordered}: list ATM before CECE (CECE's grid comes from ATM's tracer field)"
+            )
         for line in self.run_sequence:
             names = (
                 [part.strip() for part in line.split("->")]

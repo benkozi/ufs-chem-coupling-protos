@@ -143,6 +143,52 @@ add_test(
 )
 set_tests_properties(log_cece_met_bad_order PROPERTIES FIXTURES_REQUIRED cece_met_bad_order_run LABELS ci TIMEOUT 120)
 
+# The phase-order rule's failure case: a runSeq:: that runs `ATM phase2` before `ATM phase1` stops in the first
+# step with MET's own message (the generator refuses such a sequence; a hand-written file gets this far).
+string(REPLACE "    ATM phase1\n" "    ATM phaseX\n" _bad_phase_config "${_cece_met_config}")
+string(REPLACE "    ATM phase2\n" "    ATM phase1\n" _bad_phase_config "${_bad_phase_config}")
+string(REPLACE "    ATM phaseX\n" "    ATM phase2\n" _bad_phase_config "${_bad_phase_config}")
+if(_bad_phase_config STREQUAL _cece_met_config)
+  message(FATAL_ERROR "cece_met: esm.configure.in no longer has the `ATM phase1` and `ATM phase2` lines; update the bad-phase-order case")
+endif()
+file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/esm.C48.bad_phase_order.configure "${_bad_phase_config}")
+set(_run_bad_phase ${CMAKE_CURRENT_BINARY_DIR}/run_C48_np6_bad_phase_order)
+file(MAKE_DIRECTORY ${_run_bad_phase})
+add_test(
+  NAME proto_cece_met_bad_phase_order_fails
+  COMMAND
+    ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 6 ${MPIEXEC_PREFLAGS}
+    $<TARGET_FILE:esmApp> ${CMAKE_CURRENT_BINARY_DIR}/esm.C48.bad_phase_order.configure
+  WORKING_DIRECTORY ${_run_bad_phase}
+)
+set_tests_properties(
+  proto_cece_met_bad_phase_order_fails
+  PROPERTIES
+    FIXTURES_REQUIRED mockdata
+    FIXTURES_SETUP cece_met_bad_phase_order_run
+    LABELS ci
+    PASS_REGULAR_EXPRESSION "cece_met: Run( \\(user\\))? failed"
+    FAIL_REGULAR_EXPRESSION "MPI_ABORT|ORTE_ERROR_LOG|completed [0-9]+ steps"
+    TIMEOUT 300
+)
+file(
+  WRITE ${CMAKE_CURRENT_BINARY_DIR}/log_cece_met_bad_phase_order.spec
+  [=[
+require MET: run phase phase2 entered before phase1 in this step
+forbid MET: run phase phase2 \(tracers taken
+]=]
+)
+add_test(
+  NAME log_cece_met_bad_phase_order
+  COMMAND
+    ${CMAKE_COMMAND} -DRUN_DIR=${_run_bad_phase} -DSPEC=${CMAKE_CURRENT_BINARY_DIR}/log_cece_met_bad_phase_order.spec
+    -P ${_log_check}
+)
+set_tests_properties(
+  log_cece_met_bad_phase_order
+  PROPERTIES FIXTURES_REQUIRED cece_met_bad_phase_order_run LABELS ci TIMEOUT 120
+)
+
 # Conservation: MET's totals against the task-2 inventory totals at the hourly record times (where CECE's
 # linear interpolation equals the record). The tolerance is the measured AXIS consd error, rounded up
 # (runbook section 10); the tight-tolerance registration is the rule's failure case.

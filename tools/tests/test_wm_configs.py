@@ -379,6 +379,29 @@ def test_the_wm_sequence_is_the_prototypes_without_the_totals_connector() -> Non
     assert gd.GenDefaults.from_yaml(get_settings().gen_defaults_file).wm_driver is None
 
 
+def test_the_wm_driver_lists_each_component_once_and_atm_before_cece() -> None:
+    wm = yaml.safe_load(GEN_DEFAULTS.read_text())["wm_driver"]
+    gd.WmDriver.model_validate(wm)
+    by_label = {c["label"]: c for c in wm["components"]}
+    # CECE reads its grid off ATM's realized field, and the driver initializes in list order
+    reordered = wm | {"components": [by_label[n] for n in ("CECE", "ATM", "CHM")]}
+    with pytest.raises(pydantic.ValidationError, match="list ATM before CECE"):
+        gd.WmDriver.model_validate(reordered)
+    without_host = wm | {
+        "components": [by_label["CECE"]],
+        "run_sequence": ["CECE"],
+    }
+    with pytest.raises(pydantic.ValidationError, match="list ATM before CECE"):
+        gd.WmDriver.model_validate(without_host)
+    doubled = wm | {"components": [*wm["components"], by_label["CHM"]]}
+    with pytest.raises(pydantic.ValidationError, match="more than once"):
+        gd.WmDriver.model_validate(doubled)
+    # a list without CECE needs no ATM
+    gd.WmDriver.model_validate(
+        {"components": [by_label["CHM"]], "run_sequence": ["CHM"]}
+    )
+
+
 def test_unreadable_inputs_are_usage_errors(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
