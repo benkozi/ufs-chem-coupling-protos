@@ -121,6 +121,7 @@ cece_data:
     tintalgo: linear
     taxmode: cycle
     mapalgo: consd
+    geometry_reconstruction: rectilinear_midpoint
     variables:
     - file: so2_aviation
       model: so2_aviation_lto_so2_aviation
@@ -131,6 +132,7 @@ cece_data:
     tintalgo: linear
     taxmode: cycle
     mapalgo: consd
+    geometry_reconstruction: rectilinear_midpoint
     variables:
     - file: oc_aviation
       model: oc_aviation_lto_oc_aviation
@@ -141,6 +143,7 @@ cece_data:
     tintalgo: linear
     taxmode: cycle
     mapalgo: consd
+    geometry_reconstruction: rectilinear_midpoint
     variables:
     - file: bc_aviation
       model: bc_aviation_lto_bc_aviation
@@ -151,6 +154,7 @@ cece_data:
     tintalgo: linear
     taxmode: cycle
     mapalgo: consd
+    geometry_reconstruction: rectilinear_midpoint
     variables:
     - file: so2_aviation
       model: so2_aviation_cds_so2_aviation
@@ -161,6 +165,7 @@ cece_data:
     tintalgo: linear
     taxmode: cycle
     mapalgo: consd
+    geometry_reconstruction: rectilinear_midpoint
     variables:
     - file: oc_aviation
       model: oc_aviation_cds_oc_aviation
@@ -171,6 +176,7 @@ cece_data:
     tintalgo: linear
     taxmode: cycle
     mapalgo: consd
+    geometry_reconstruction: rectilinear_midpoint
     variables:
     - file: bc_aviation
       model: bc_aviation_cds_bc_aviation
@@ -181,6 +187,7 @@ cece_data:
     tintalgo: linear
     taxmode: cycle
     mapalgo: consd
+    geometry_reconstruction: rectilinear_midpoint
     variables:
     - file: so2_aviation
       model: so2_aviation_crs_so2_aviation
@@ -191,6 +198,7 @@ cece_data:
     tintalgo: linear
     taxmode: cycle
     mapalgo: consd
+    geometry_reconstruction: rectilinear_midpoint
     variables:
     - file: oc_aviation
       model: oc_aviation_crs_oc_aviation
@@ -201,6 +209,7 @@ cece_data:
     tintalgo: linear
     taxmode: cycle
     mapalgo: consd
+    geometry_reconstruction: rectilinear_midpoint
     variables:
     - file: bc_aviation
       model: bc_aviation_crs_bc_aviation
@@ -211,6 +220,7 @@ cece_data:
     tintalgo: nearest
     taxmode: limit
     mapalgo: consd
+    geometry_reconstruction: rectilinear_midpoint
     variables:
     - file: oh
       model: gmi_oh
@@ -227,6 +237,7 @@ cece_data:
     tintalgo: linear
     taxmode: cycle
     mapalgo: consd
+    geometry_reconstruction: rectilinear_midpoint
     variables:
     - file: conc
       model: dms_conc
@@ -247,6 +258,7 @@ cece_data:
     tintalgo: nearest
     taxmode: limit
     mapalgo: consd
+    geometry_reconstruction: rectilinear_midpoint
     variables:
     - file: SO2
       model: anthro1_SO2
@@ -263,6 +275,7 @@ cece_data:
     tintalgo: nearest
     taxmode: limit
     mapalgo: consd
+    geometry_reconstruction: rectilinear_midpoint
     variables:
     - file: SO2_elev
       model: anthro2_SO2_elev
@@ -279,6 +292,7 @@ cece_data:
     tintalgo: nearest
     taxmode: limit
     mapalgo: consd
+    geometry_reconstruction: rectilinear_midpoint
     variables:
     - file: SO2_ship
       model: ship_SO2_ship
@@ -298,6 +312,7 @@ cece_data:
     tintalgo: linear
     taxmode: limit
     mapalgo: consd
+    geometry_reconstruction: rectilinear_midpoint
     variables:
     - file: biomass
       model: fire_biomass
@@ -308,6 +323,7 @@ cece_data:
     tintalgo: linear
     taxmode: limit
     mapalgo: consd
+    geometry_reconstruction: rectilinear_midpoint
     variables:
     - file: limo
       model: bio_limo
