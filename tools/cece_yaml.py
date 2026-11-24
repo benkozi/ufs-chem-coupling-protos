@@ -91,9 +91,31 @@ class Stream(Strict):
     mapalgo: str = Field(
         description="The manifest's cece_mapalgo (consd, bilinear, passthrough)."
     )
+    geometry_reconstruction: Literal["rectilinear_midpoint"] | None = Field(
+        default=None,
+        description="How CECE builds source cell boundaries when the file has none: rectilinear_midpoint for a conservative stream on a lat-lon file without bounds (CECE refuses conservative regridding from centres alone); left out when the file carries CF bounds or the method samples centres.",
+    )
     variables: list[StreamVariable] = Field(
         description="The category's variables.", min_length=1
     )
+
+
+CONSERVATIVE_MAPALGOS = frozenset({"consd", "consf"})
+
+
+def source_reconstruction(
+    category: mf.Category, mapalgo: str
+) -> Literal["rectilinear_midpoint"] | None:
+    """The stream's geometry_reconstruction: midpoint boundaries for a conservative read of a file without bounds.
+
+    The analytic CF files carry lon/lat bounds (no layout, or one that writes them), which CECE reads itself.
+    A real-layout inventory has centres only, and CECE's conservative methods then need a declared policy.
+    """
+    if mapalgo not in CONSERVATIVE_MAPALGOS:
+        return None
+    if category.layout is None or category.layout.write_bounds_and_area:
+        return None
+    return "rectilinear_midpoint"
 
 
 class CeceData(Strict):
@@ -221,6 +243,7 @@ def cece_config(
         ]
         if not variables:
             continue
+        mapalgo = category.cece_mapalgo or "consd"
         streams.append(
             Stream(
                 name=name,
@@ -228,7 +251,8 @@ def cece_config(
                 cadence=stream_cadence,
                 tintalgo="nearest" if interpolation.get(name) == "none" else "linear",
                 taxmode=taxmode,
-                mapalgo=category.cece_mapalgo or "consd",
+                mapalgo=mapalgo,
+                geometry_reconstruction=source_reconstruction(category, mapalgo),
                 variables=variables,
             )
         )

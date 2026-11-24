@@ -213,3 +213,32 @@ def test_time_interpolation_decides_the_time_algorithm(tmp_path: Path) -> None:
     assert streams["gmi"].tintalgo == "nearest"
     assert streams["fire"].tintalgo == "linear"
     assert streams["bio"].tintalgo == "linear"  # not named: linear, as before
+
+
+def test_a_conservative_stream_without_file_bounds_declares_its_reconstruction(
+    tmp_path: Path,
+) -> None:
+    """CECE refuses conservative regridding from centres alone (ufs-community/CECE#124): a real-layout file has no bounds."""
+    manifest = realistic_manifest(tmp_path)
+    windows = {
+        manifest.categories[name].file: tmp_path / f"gen/streams/{name}.nc"
+        for name in ("anthro1", "fire", "bio")
+    }
+    config = cz.cece_config(manifest, data_root=tmp_path, amio=AMIO, windows=windows)
+    streams = {s.name: s for s in config.cece_data.streams}
+    for name, stream in streams.items():
+        expected = "rectilinear_midpoint" if stream.mapalgo == "consd" else None
+        assert stream.geometry_reconstruction == expected, name
+    assert streams["anthro1"].geometry_reconstruction == "rectilinear_midpoint"
+    assert streams["dust"].geometry_reconstruction is None
+
+
+def test_a_stream_whose_file_carries_bounds_declares_no_reconstruction(
+    manifest: mf.Manifest, tmp_path: Path
+) -> None:
+    """The analytic CF files carry lon/lat bounds, which CECE reads; the key is then left out of the YAML."""
+    config = cz.cece_config(manifest, data_root=tmp_path, amio=AMIO)
+    assert all(s.geometry_reconstruction is None for s in config.cece_data.streams)
+    path = tmp_path / "cece.yaml"
+    config.to_yaml(path)
+    assert "geometry_reconstruction" not in path.read_text()
