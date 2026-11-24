@@ -110,10 +110,10 @@ On the Mac, outside the container: `uv sync --frozen`, `uv run pre-commit run --
 
 | Path | Repository | Branch | Pinned commit |
 | --- | --- | --- | --- |
-| `extern/CATChem` | `https://github.com/benkozi/CATChem.git` (fork of `ufs-community/CATChem`) | `feature/cece-coupling-proto` (task 5, cut from upstream `develop` `b22dc16`; sections 11 and 14) | `df9b41a2` |
-| `extern/CECE` | `https://github.com/benkozi/CECE.git` (fork of `ufs-community/CECE`) | `feature/multi-tile-host-decomp` (task 4, cut from upstream `develop` `25f7209`; section 10) | `7aea59b` (issue 16: `d22e8d4` adds `CECE_SetHostGeometry`, ufs-community/CECE#166; `7aea59b` its harness cases, docs and a format fix on the parent-grid path) |
+| `extern/CATChem` | `https://github.com/benkozi/CATChem.git` (fork of `ufs-community/CATChem`) | `feature/cece-coupling-proto` (task 5, cut from upstream `develop` `b22dc16`; sections 11 and 14; upstream `develop` `af0232ea` merged in on 2026-11-24, section 18) | `aa6cd078` |
+| `extern/CECE` | `https://github.com/benkozi/CECE.git` (fork of `ufs-community/CECE`) | `feature/multi-tile-host-decomp` (task 4, cut from upstream `develop` `25f7209`; section 10; upstream `develop` `544ad82` merged in on 2026-11-24, section 18) | `a7dd236` (the merge `7225f3f` plus a fix to two example configs and the coupling harness registration) |
 
-`extern/CECE` carries `extern/helm` (NOAA-EMC/HELM) and `extern/yaml-cpp`; `extern/CATChem` carries `src/external/GOCART` and `src/external/musica` (unused with `CATCHEM_BUILD_MUSICA=OFF`).
+`extern/CECE` carries `extern/helm` (NOAA-EMC/HELM, `5b7edff` since section 18) and `extern/yaml-cpp`; `extern/CATChem` carries `src/external/GOCART` and `src/external/musica` (unused with `CATCHEM_BUILD_MUSICA=OFF`).
 
 ```bash
 git submodule update --init --recursive
@@ -1201,3 +1201,56 @@ Cloud builder, amd64, one whole-label run per step; C48, 6 PETs, 120 steps unles
 - **Byte equality across platforms:** the set generated on Linux in the image equals the checked-in set generated on this Mac.
 
 Not measured or not run: `SYMMEDGEMAX` where it differs from `BALANCED`; CECE's own CI on the new harness scenarios with the real CEDS file (they passed on the cloud builder with a synthetic stand-in); the `update_wm_configs_catchem_cece_control` target itself (the checked-in files come from the identical generator command); the `ci` label of `2dcbff9` as one run after its one-line script fix (the next step's run covers it); and after the last cloud run of `06cc844` the memory ceiling of `log_wm_catchem_cece_control` was tightened from 3.6 GB to 1.7 GB without a re-run (measured 1.44 GB).
+
+## 18. Upstream `develop` merged into both submodules (2026-11-24)
+
+Both companion branches took a merge of their `ufs-community` `develop`. Nothing about how the prototype is built or run changed; one generator rule is new.
+
+| Submodule | Before | Upstream merged | After |
+| --- | --- | --- | --- |
+| `extern/CATChem` | `99a17a5c` | `af0232ea` (2.1.2-rc.1, 7 commits past the base `b22dc160`) | `aa6cd078` |
+| `extern/CECE` | `1de3ef6` | `544ad82` (15 commits past the base `25f7209`) | `7225f3f` (merge), `a7dd236` (test fix) |
+| `extern/CECE/extern/helm` | `a3e36e6` | | `5b7edff` |
+
+To repeat a merge (neither checkout has a remote for `ufs-community`):
+
+```bash
+git -C extern/CECE fetch https://github.com/ufs-community/CECE.git develop
+```
+
+```bash
+git -C extern/CECE merge --no-ff --no-commit FETCH_HEAD
+```
+
+```bash
+git -C extern/CECE submodule update --init extern/helm
+```
+
+**CATChem.** No conflict. `src/external/musica` stays at the companion's `9a5768c6` (MUSICA main); upstream's batched gas chemistry (#220) and that MUSICA were merged textually and **were not compiled together here**: the image builds with `CATCHEM_BUILD_MUSICA=OFF` (user decision, 2026-11-24). CATChem's own CI is where that combination is proven.
+
+**CECE.** Seven files conflicted against upstream's stream geometry pipeline (#124) and logger routing (#183):
+
+- `build_regrid_plan` (`cece_regridder_utils.{hpp,cpp}`): upstream's signature (source and destination gridspec, two `GeometrySettings`) with the host block's `corner_lon`/`corner_lat` pointers appended. The explicit-corner destination mesh is chosen before upstream's destination logic, and explicit corners count as cell boundaries for upstream's new conservative prerequisite.
+- `cece_driver_facade.cpp`: upstream's candidate plan and collective publication, with the corner arguments and the `CECE::RegridPlan` region; `cece_driver_create` and `cece_driver_create_block` both inside `extern "C"`.
+- `cece_core_initialize_p1.cpp`: the companion's order (parse the config, then initialize Kokkos with the thread count from `driver.num_threads`, the VM or the environment), every line through `CECE_LOG_*` (CECE's pre-commit now forbids raw `std::cout`).
+- `cece_cap.F90`, `test_coupling_app.F90`: `CECE_SetHostGeometry` and upstream's `cece_nuopc_export_spec` both public. `tests/CMakeLists.txt`: `test_grid_spec_block` next to upstream's geometry tests.
+
+**What upstream changed for a configuration.** CECE refuses conservative regridding (`consd`, `consf`) when either grid is described by centres only: `conservative mapping needs prepared cell boundaries; center-only geometry cannot be reconstructed implicitly`. A source file with CF `bounds` on its coordinates is read as before. One without them needs `geometry_reconstruction: rectilinear_midpoint` on the stream; a destination generated from `driver.grid` needs the same key under `driver`. The host block is not affected: its corners come from the parent grid.
+
+- The generator writes the stream key for a conservative stream whose file layout has no bounds (`cece_yaml.source_reconstruction`): every `consd` stream of the realistic profile and of the checked-in weather-model set (16 streams), none of the analytic profile.
+- Two defects in upstream's own tests, visible only when `data/OC-em-anthro_CMIP_CEDS_2023.nc` exists (upstream's CI has no such file, so the tests are not registered there), fixed in `a7dd236`: the two CEDS example configs lacked the `driver` key above, and the coupling harness was registered with `tests/nccmp_var.c` although the script now executes its comparator.
+
+**Runs** (all on the Build Cloud builder's amd64 node unless noted):
+
+| Run | Result |
+| --- | --- |
+| `tools/ci.sh test "ci\|wm"` before the merge (`3a5fdb3`, pins `99a17a5c` / `1de3ef6`) | 48 of 48 in 562.3 s |
+| the same after the merge (`403c85b`) | 48 of 48 in 592.6 s; `proto_cece_met_catchem` 56.3 s and 877 MB per PET, the realistic run 79.5 s and 933 MB, the weather-model set 362.1 s and 1.44 GB, exit status 0 |
+| conservation, before → after | 1.529e-6 → 1.530e-6 (`anthro/SO2`, analytic), 1.513e-5 unchanged (`anthro1/SO2`), 2.008e-3 → 1.791e-3 (`dust/sep`, nearest-neighbour); the registered tolerances are unchanged |
+| CECE's own suite on the merged tree (a scratch image stage with `CECE_BUILD_TESTING=ON`, GTest and RapidCheck fetched, a synthetic 72 x 36 stand-in with bounds for the CEDS file linked at `/work/data`) | 808 tests: 802 passed in the first complete run; the five CEDS tests passed after `a7dd236`, the coupling harness with all of scenarios 1a to 5d (5a within 1.3e-24 of standalone, np1 equal to np2 bit for bit); `test_verify_submodules_python` cannot run there (the build context has no `.git`) |
+| `tools/ci.sh test c96` | 6 of 6 in 389.7 s: `proto_met_catchem_c96` (12 PETs) 91.0 s, `proto_cece_met_c96` (6 PETs) 47.4 s, `proto_cece_met_catchem_c96` (6 PETs) 240.4 s |
+| `uv run pytest tools/tests`, `uv run pre-commit run --all-files` (this Mac, natively, not in the image) | 284 passed; every hook passed |
+
+**The C96 three-component run** (`proto_cece_met_catchem_c96`, its first run): 120 steps in 240.4 s on 6 PETs, one `96x96` block with `97x97` corners per PET, 1.14 GB per PET after initialization and 2.27 GB at the end, `so2` growing to 2.557e6, no `ERROR` line in any PET log. Its stdout is not tee'd and it has no log, growth or conservation check registered, so a CATChem process failing on stdout would not have been seen (section 17's rule); the C48 runs carry those checks.
+
+Not done: the branches are merged, not rebased; nothing was pushed by the agent; the CEDS tests ran against a stand-in, not the real file; the gas chemistry with MUSICA on (above).
